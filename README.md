@@ -1,5 +1,5 @@
-# 🛡️ Razorpay Churn Sentinel — Bounded Autonomous Retention Agent
-### *Enterprise Submission for the Razorpay AI Agent Challenge*
+# 🛡️ Retention Sentinel — Bounded Autonomous Retention Agent
+### *Enterprise AI Agent for Subscriptions & Payment Gateways*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,7 +9,7 @@
 [![Tests: PyTest](https://img.shields.io/badge/Tests-PyTest%209%2F9%20Passed-brightgreen.svg)](https://docs.pytest.org/)
 [![CI/CD: GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue.svg)](https://github.com/features/actions)
 
-An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subscriptions & Payment Gateways**. The system strictly isolates **predictive intelligence** (ML churn classifier) from **agentic action** (LLM dunning strategies), governed by **deterministic, code-level financial guardrails**, **Pydantic schema validation**, **prompt injection defense**, and an immutable audit ledger.
+An enterprise-grade autonomous churn recovery agent designed for **Subscriptions & Payment Gateways**. The system strictly isolates **predictive intelligence** (ML churn classifier) from **agentic action** (LLM dunning strategies), governed by **deterministic, code-level financial guardrails**, **Pydantic schema validation**, **prompt injection defense**, and an immutable audit ledger.
 
 ---
 
@@ -32,8 +32,8 @@ An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subs
                                        v
 +-----------------------------------------------------------------------------------+
 | 3. REASONING ENGINE (LLM Tool Calling + Prompt Sanitizer + Pydantic Schema)       |
-|    - Generates Razorpay tool calls (razorpay_smart_retry, enable_upi_autopay, etc.) |
-|    - Persona: Razorpay Sentinel (maximize GMV retention, minimize leakage)        |
+|    - Generates retention tool calls (trigger_smart_retry, enable_upi_autopay, etc.)|
+|    - Persona: Retention Sentinel (maximize GMV retention, minimize leakage)        |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
@@ -41,7 +41,7 @@ An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subs
 | 4. EXECUTION & SAFETY INTERCEPTOR (Deterministic Financial Guardrails)            |
 |    - Policy Rules: Max coupon <=15%, Max trial <=14d, Idempotency lock, LTV cap   |
 |    - Outcome: APPROVED, BLOCKED (Policy Violation), or AUTO-REMEDIATED            |
-|    - Ledger: Updates database & dispatches MockRazorpayAPI calls                  |
+|    - Ledger: Updates database & dispatches MockBillingAPI calls                  |
 +-----------------------------------------------------------------------------------+
 ```
 
@@ -64,7 +64,7 @@ An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subs
 - **Modular, Layered Architecture**: `config.py`, `database.py`, `predictor.py`, `agent.py`, `interceptor.py`, `mock_api.py`, `runner.py`, `app.py`. Each module has a single responsibility.
 - **Centralized Configuration Management**: Config parameters (`MAX_DISCOUNT_PERCENTAGE`, `RISK_TRIGGER_THRESHOLD`, secrets) managed cleanly in `config.py`.
 - **Test-Driven Verification**: 9/9 PyTest tests covering normal flows, prompt injection defense, UPI AutoPay, rate limits, invalid tools, and idempotency.
-- **Razorpay Webhooks Integration**: Endpoint `POST /api/webhooks/razorpay/payment-failed` simulates receiving Razorpay `payment.failed` webhook events to trigger instant recovery.
+- **Payment Failure Webhook Integration**: Endpoint `POST /api/webhooks/payment-failed` simulates receiving `payment.failed` gateway webhook events to trigger instant recovery.
 - **CI/CD Automation**: GitHub Actions workflow (`.github/workflows/test.yml`) automatically executes test suites on every commit.
 
 ---
@@ -74,13 +74,13 @@ An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subs
 | Component | Target Responsibility | Key Implementation & Validation Points |
 | :--- | :--- | :--- |
 | [`config.py`](file:///d:/Recovery%20-Agent/config.py) | **Configuration Management** | Centralized bounds (Max discount 15%, max trial 14d, LTV ratio 50%, 75% trigger threshold). |
-| [`predictor.py`](file:///d:/Recovery%20-Agent/predictor.py) | **Razorpay ML Risk Engine** | Trains Random Forest classifier on payment failure rates, inactivity, and GMV. Outputs scores 0–100%. |
+| [`predictor.py`](file:///d:/Recovery%20-Agent/predictor.py) | **ML Churn Risk Engine** | Trains Random Forest classifier on payment failure rates, inactivity, and GMV. Outputs scores 0–100%. |
 | [`agent.py`](file:///d:/Recovery%20-Agent/agent.py) | **Reasoning Brain + Sanitizer** | Prompt injection pre-processor, Few-Shot prompting, Gemini API integration, Pydantic schema validation. |
 | [`interceptor.py`](file:///d:/Recovery%20-Agent/interceptor.py) | **Safety Interceptor** | Evaluates tool calls against hard bounds; blocks excessive coupons (>15%), double coupons, and unknown tools. |
-| [`mock_api.py`](file:///d:/Recovery%20-Agent/mock_api.py) | **Razorpay Dunning APIs** | Optimus Smart Retry, UPI AutoPay mandate setup, Payment Links, Subscriptions Coupons, WhatsApp Reminders. |
+| [`mock_api.py`](file:///d:/Recovery%20-Agent/mock_api.py) | **Billing & Gateway APIs** | Smart Retry, UPI AutoPay mandate setup, Payment Links, Subscription Coupons, WhatsApp Reminders. |
 | [`database.py`](file:///d:/Recovery%20-Agent/database.py) | **Immutable Audit Ledger** | SQLite database with append-only `Audit_Log` ledger recording all risk scores, prompts, and verdicts. |
 | [`runner.py`](file:///d:/Recovery%20-Agent/runner.py) | **Pipeline Orchestration** | Batch execution runner iterating over merchant accounts with formatted CLI logs. |
-| [`app.py`](file:///d:/Recovery%20-Agent/app.py) + **UI** | **Razorpay Dashboard & Webhooks** | Flask web app serving Glassmorphic UI at **`http://127.0.0.1:5000`** & `POST /api/webhooks/razorpay/payment-failed`. |
+| [`app.py`](file:///d:/Recovery%20-Agent/app.py) + **UI** | **Dashboard & Webhooks** | Flask web app serving Glassmorphic UI at **`http://127.0.0.1:5000`** & `POST /api/webhooks/payment-failed`. |
 | [`test_agent.py`](file:///d:/Recovery%20-Agent/test_agent.py) | **Safety Verification Suite** | 9/9 PyTest suite validating prompt injection, UPI AutoPay, webhook triggers, rate limits, and idempotency. |
 
 ---
@@ -99,14 +99,14 @@ pip install -r requirements.txt
 ```bash
 pytest test_agent.py
 ```
-*Expected Output:* `9 passed in 4.38s`
+*Expected Output:* `9 passed in 3.75s`
 
 ### 3. Run Autonomous CLI Pipeline
 ```bash
 python runner.py
 ```
 
-### 4. Launch Razorpay Merchant Web Dashboard
+### 4. Launch Merchant Web Dashboard
 ```bash
 python app.py
 ```
@@ -121,10 +121,10 @@ Open **`http://127.0.0.1:5000`** in your browser.
 | `GET /api/customers` | `GET` | Fetches all merchant profiles, payment metrics, and ML risk scores. |
 | `GET /api/audit-logs` | `GET` | Returns full append-only audit ledger history. |
 | `GET /api/metrics` | `GET` | Returns system KPIs (Total GMV at risk in ₹ INR, approved vs blocked actions). |
-| `POST /api/webhooks/razorpay/payment-failed` | `POST` | **Razorpay Webhook**: Simulates `payment.failed` event and triggers recovery. |
+| `POST /api/webhooks/payment-failed` | `POST` | **Payment Webhook**: Simulates `payment.failed` event and triggers recovery. |
 | `POST /api/process-all` | `POST` | Triggers the autonomous retention pipeline across all merchant accounts. |
 | `POST /api/process-customer/<id>` | `POST` | Runs the agent pipeline on a single target merchant with full JSON execution trace. |
-| `POST /api/test-guardrail` | `POST` | Simulates an arbitrary Razorpay tool call payload against the guardrail interceptor. |
+| `POST /api/test-guardrail` | `POST` | Simulates an arbitrary tool call payload against the guardrail interceptor. |
 
 ---
 
