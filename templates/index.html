@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retention Sentinel | Autonomous Fintech Agent</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Glassmorphism Styles -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div class="brand-text">
+                    <h2>Sentinel AI</h2>
+                    <span>Fintech Retention Agent</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <a href="#matrix" class="nav-item active" onclick="switchTab('matrix')">
+                    <i class="fa-solid fa-chart-line"></i> Risk Matrix & Predictor
+                </a>
+                <a href="#audit" class="nav-item" onclick="switchTab('audit')">
+                    <i class="fa-solid fa-receipt"></i> Explainability Ledger
+                </a>
+                <a href="#simulator" class="nav-item" onclick="switchTab('simulator')">
+                    <i class="fa-solid fa-sliders"></i> Guardrail Simulator
+                </a>
+                <a href="#idempotency" class="nav-item" onclick="switchTab('idempotency')">
+                    <i class="fa-solid fa-arrows-rotate"></i> Idempotency Verification
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <span class="status-indicator online"></span>
+                    <div class="status-info">
+                        <strong>Guardrails Active</strong>
+                        <small>Hard Policies Enforced</small>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header Bar -->
+            <header class="top-header">
+                <div class="header-title">
+                    <h1>Autonomous Fintech Retention Architecture</h1>
+                    <p>Separating Predictive Intelligence from Agentic Action under Strict Financial Guardrails</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="seedDatabase()">
+                        <i class="fa-solid fa-database"></i> Seed Synthetic Data
+                    </button>
+                    <button class="btn btn-primary" onclick="runBatchPipeline()">
+                        <i class="fa-solid fa-bolt"></i> Run Autonomous Batch
+                    </button>
+                </div>
+            </header>
+
+            <!-- Metric Cards Overview -->
+            <section class="metrics-grid">
+                <div class="metric-card glass">
+                    <div class="metric-header">
+                        <span class="metric-label">Monitored Accounts</span>
+                        <i class="fa-solid fa-users icon-indigo"></i>
+                    </div>
+                    <div class="metric-value" id="metric-total-customers">--</div>
+                    <div class="metric-subtext">Active subscriber database</div>
+                </div>
+
+                <div class="metric-card glass">
+                    <div class="metric-header">
+                        <span class="metric-label">At-Risk Triggered (>75%)</span>
+                        <i class="fa-solid fa-triangle-exclamation icon-amber"></i>
+                    </div>
+                    <div class="metric-value text-amber" id="metric-at-risk-count">--</div>
+                    <div class="metric-subtext">Passed to Reasoning Engine</div>
+                </div>
+
+                <div class="metric-card glass">
+                    <div class="metric-header">
+                        <span class="metric-label">MRR at Risk</span>
+                        <i class="fa-solid fa-dollar-sign icon-emerald"></i>
+                    </div>
+                    <div class="metric-value text-emerald" id="metric-mrr-at-risk">--</div>
+                    <div class="metric-subtext">Monthly Recurring Revenue</div>
+                </div>
+
+                <div class="metric-card glass">
+                    <div class="metric-header">
+                        <span class="metric-label">Approved vs Intercepted</span>
+                        <i class="fa-solid fa-shield-cat icon-rose"></i>
+                    </div>
+                    <div class="metric-value">
+                        <span class="text-emerald" id="metric-approved-count">0</span> / 
+                        <span class="text-rose" id="metric-blocked-count">0</span>
+                    </div>
+                    <div class="metric-subtext">Hard barrier policy decisions</div>
+                </div>
+            </section>
+
+            <!-- TAB 1: CUSTOMER RISK MATRIX -->
+            <section id="tab-matrix" class="tab-content active">
+                <div class="card glass">
+                    <div class="card-header">
+                        <div>
+                            <h3>Predictive Engine: Risk Matrix</h3>
+                            <p class="subtitle">ML Classifier evaluated behavioral profiles (Logins, Failed Payments, Usage Drop)</p>
+                        </div>
+                        <button class="btn btn-sm btn-outline" onclick="trainML()">
+                            <i class="fa-solid fa-brain"></i> Retrain ML Classifier
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Plan & MRR</th>
+                                    <th>Behavioral Risk Metrics</th>
+                                    <th>Card Expiring</th>
+                                    <th>ML Risk Score</th>
+                                    <th>Status</th>
+                                    <th>Idempotency</th>
+                                    <th>Agentic Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="customers-table-body">
+                                <tr><td colspan="8" class="text-center">Loading customer matrix...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: EXPLAINABILITY AUDIT LEDGER -->
+            <section id="tab-audit" class="tab-content">
+                <div class="card glass">
+                    <div class="card-header">
+                        <div>
+                            <h3>Audit Ledger (Permanent Decision History)</h3>
+                            <p class="subtitle">100% Explainable: Trace exact Risk Score, Prompt Reasoning, Interceptor Verdict, and Execution</p>
+                        </div>
+                        <button class="btn btn-sm btn-outline" onclick="loadAuditLogs()">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh Audit Log
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID / Timestamp</th>
+                                    <th>Customer</th>
+                                    <th>ML Score</th>
+                                    <th>Raw LLM Reasoning</th>
+                                    <th>Proposed Action</th>
+                                    <th>Guardrail Verdict</th>
+                                    <th>Policy Reason / Outcome</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body">
+                                <tr><td colspan="7" class="text-center">Loading audit ledger...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: GUARDRAIL POLICY SIMULATOR -->
+            <section id="tab-simulator" class="tab-content">
+                <div class="grid-2">
+                    <div class="card glass">
+                        <div class="card-header">
+                            <h3>Test Policy Interceptor</h3>
+                            <p class="subtitle">Simulate AI proposing policy-violating actions to verify hard barriers</p>
+                        </div>
+                        <form id="simulator-form" onsubmit="runGuardrailSimulation(event)">
+                            <div class="form-group">
+                                <label>Target Customer Account</label>
+                                <select id="sim-customer-id" class="form-control">
+                                    <option value="CUST-301">CUST-301 (Robert Sterling - Enterprise $1,200/mo)</option>
+                                    <option value="CUST-303">CUST-303 (Leo Miller - Has Active Discount!)</option>
+                                    <option value="CUST-201">CUST-201 (Elena Rostova - Card Expiring)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Proposed Action Tool Call</label>
+                                <select id="sim-action-name" class="form-control" onchange="updateSimParams()">
+                                    <option value="offer_discount">offer_discount(percentage, duration_months)</option>
+                                    <option value="extend_trial">extend_trial(days)</option>
+                                    <option value="pause_subscription">pause_subscription(duration_months)</option>
+                                </select>
+                            </div>
+
+                            <div id="sim-params-discount" class="param-group">
+                                <div class="form-group">
+                                    <label>Discount Percentage (Max Policy Limit: 20%)</label>
+                                    <input type="number" id="sim-param-pct" class="form-control" value="25" min="1" max="50">
+                                    <small class="text-amber">Try 25% to trigger policy block!</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Duration (Months)</label>
+                                    <input type="number" id="sim-param-duration" class="form-control" value="6">
+                                </div>
+                            </div>
+
+                            <div id="sim-params-trial" class="param-group hidden">
+                                <div class="form-group">
+                                    <label>Extension Days (Max Policy Limit: 14 Days)</label>
+                                    <input type="number" id="sim-param-days" class="form-control" value="30">
+                                    <small class="text-amber">Try 30 days to trigger policy block!</small>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-block">
+                                <i class="fa-solid fa-shield-virus"></i> Submit Payload to Interceptor
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="card glass">
+                        <div class="card-header">
+                            <h3>Interceptor Live Decision Terminal</h3>
+                            <p class="subtitle">Deterministic Guardrail Logic Evaluation</p>
+                        </div>
+                        <div id="sim-result-container" class="terminal-box">
+                            <div class="terminal-placeholder">
+                                <i class="fa-solid fa-terminal"></i>
+                                <p>Submit a payload to inspect the Interceptor's hard policy evaluation</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: IDEMPOTENCY VERIFICATION -->
+            <section id="tab-idempotency" class="tab-content">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>Idempotency & Restart Safety Test</h3>
+                        <p class="subtitle">Verifies that system restarts or duplicate batch runs cannot issue double discounts</p>
+                    </div>
+                    <div class="idempotency-box">
+                        <div class="idempotency-explanation">
+                            <h4><i class="fa-solid fa-lock text-emerald"></i> Hard State Lock (`processed = 1`)</h4>
+                            <p>When the agent acts on an at-risk customer, the database immediately commits a <code>processed = 1</code> flag alongside a timestamped ledger entry. Subsequent agent triggers on the same account are intercepted mathematically before any API calls occur.</p>
+                        </div>
+                        
+                        <div class="action-row">
+                            <button class="btn btn-warning" onclick="testIdempotencyRun()">
+                                <i class="fa-solid fa-rotate-right"></i> Trigger Duplicate Pipeline Run (Test Idempotency)
+                            </button>
+                        </div>
+
+                        <div id="idempotency-logs" class="terminal-box margin-top">
+                            <p class="text-muted">Click above to verify idempotency handling...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Trace & Detail Modal -->
+    <div id="trace-modal" class="modal-overlay hidden">
+        <div class="modal-box glass">
+            <div class="modal-header">
+                <h3 id="modal-title">Customer Execution Trace</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-content">
+                <p>Loading trace...</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom App Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
