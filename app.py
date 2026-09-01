@@ -13,6 +13,10 @@ CORS(app)
 def index():
     return render_template("index.html")
 
+@app.route('/favicon.ico')
+def favicon():
+    return ("", 204)
+
 @app.route("/api/customers", methods=["GET"])
 def get_customers():
     customers = database.get_all_customers()
@@ -69,7 +73,8 @@ def train_ml():
 
 @app.route("/api/process-all", methods=["POST"])
 def process_all():
-    auto_remediate = request.json.get("auto_remediate", False) if request.json else False
+    data = request.get_json(force=True, silent=True) or {}
+    auto_remediate = data.get("auto_remediate", False)
     run_autonomous_pipeline(auto_remediate=auto_remediate)
     return jsonify({"success": True, "message": "Autonomous retention pipeline executed."})
 
@@ -78,6 +83,8 @@ def process_customer(customer_id):
     customer = database.get_customer_by_id(customer_id)
     if not customer:
         return jsonify({"success": False, "message": "Customer not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
 
     # Ensure customer risk score is computed
     p = predictor.ChurnPredictor()
@@ -94,7 +101,7 @@ def process_customer(customer_id):
     interceptor_result = GuardrailInterceptor.evaluate_and_execute(
         customer=customer,
         llm_output=llm_output,
-        auto_remediate_violators=request.json.get("auto_remediate", False) if request.json else False
+        auto_remediate_violators=data.get("auto_remediate", False)
     )
 
     updated_customer = database.get_customer_by_id(customer_id)
@@ -109,7 +116,7 @@ def process_customer(customer_id):
 @app.route("/api/test-guardrail", methods=["POST"])
 def test_guardrail():
     """Endpoint allowing interactive testing of arbitrary payloads against the guardrail interceptor."""
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     customer_id = data.get("customer_id", "CUST-301")
     action_name = data.get("action_name", "offer_discount")
     params = data.get("parameters", {"percentage": 25, "duration_months": 3})

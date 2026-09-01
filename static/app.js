@@ -160,7 +160,10 @@ async function loadAuditLogs() {
 async function seedDatabase() {
     if (!confirm("Re-initialize SQLite database with fresh synthetic customer personas?")) return;
     try {
-        const res = await fetch("/api/seed", { method: "POST" });
+        const res = await fetch("/api/seed", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
         const data = await res.json();
         alert(data.message);
         loadDashboardData();
@@ -171,7 +174,11 @@ async function seedDatabase() {
 
 async function runBatchPipeline() {
     try {
-        const res = await fetch("/api/process-all", { method: "POST" });
+        const res = await fetch("/api/process-all", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
         const data = await res.json();
         alert("Autonomous batch execution completed!");
         loadDashboardData();
@@ -182,7 +189,10 @@ async function runBatchPipeline() {
 
 async function trainML() {
     try {
-        const res = await fetch("/api/train-ml", { method: "POST" });
+        const res = await fetch("/api/train-ml", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
         const data = await res.json();
         alert(data.message);
         loadCustomers();
@@ -193,7 +203,11 @@ async function trainML() {
 
 async function triggerSingleCustomer(customerId) {
     try {
-        const res = await fetch(`/api/process-customer/${customerId}`, { method: "POST" });
+        const res = await fetch(`/api/process-customer/${customerId}`, { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
         const data = await res.json();
         if (data.success) {
             showTraceModal(customerId, data);
@@ -295,7 +309,11 @@ async function testIdempotencyRun() {
     box.innerHTML = `<span class="text-amber">Running duplicate pipeline trigger...</span>\n`;
 
     try {
-        const res = await fetch("/api/process-all", { method: "POST" });
+        const res = await fetch("/api/process-all", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
         const data = await res.json();
 
         const auditRes = await fetch("/api/audit-logs");
