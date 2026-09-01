@@ -66,13 +66,13 @@ class ChurnPredictor:
         if not self.is_trained:
             self.train()
 
-        features = np.array([[
-            float(customer["days_since_active"]),
-            float(customer["failed_payment_count"]),
-            float(customer["support_tickets_30d"]),
-            float(customer["usage_drop_pct"]),
-            float(customer["card_expiring_soon"])
-        ]])
+        features = pd.DataFrame([{
+            "days_since_active": float(customer["days_since_active"]),
+            "failed_payment_count": float(customer["failed_payment_count"]),
+            "support_tickets_30d": float(customer["support_tickets_30d"]),
+            "usage_drop_pct": float(customer["usage_drop_pct"]),
+            "card_expiring_soon": float(customer["card_expiring_soon"])
+        }])
 
         features_scaled = self.scaler.transform(features)
         
