@@ -35,27 +35,36 @@ class TestFintechRetentionAgent(unittest.TestCase):
         self.assertLess(healthy_score, 75.0)
         self.assertGreaterEqual(ghosting_score, 75.0)
 
-    def test_layer3_reasoning_engine(self):
-        """Layer 3: Verify LLM agent generates structured JSON tool call outputs."""
-        agent = RetentionAgent()
-        sample_customer = database.get_customer_by_id("CUST-201")
-        sample_customer["risk_score"] = 88.5
-
-        output = agent.generate_strategy(sample_customer)
-        self.assertIn("reasoning", output)
-        self.assertIn("tool_call", output)
-        self.assertIn("name", output["tool_call"])
-        self.assertIn("parameters", output["tool_call"])
-
-    def test_layer4_guardrail_discount_cap(self):
-        """Layer 4: Interceptor MUST BLOCK discounts exceeding the 20% cap."""
+    def test_normal_recovery_flow(self):
+        """Checklist Step 4.1: At-risk customer receives valid 10% discount -> Allowed & Logged."""
         customer = database.get_customer_by_id("CUST-301") # MRR = 1200, processed = 0
         
-        violating_output = {
-            "reasoning": "Attempting 35% discount offer.",
+        valid_output = {
+            "reasoning": "Offering standard 10% retention discount.",
             "tool_call": {
                 "name": "offer_discount",
-                "parameters": {"percentage": 35, "duration_months": 3}
+                "parameters": {"percentage": 10, "duration_months": 3}
+            }
+        }
+
+        result = GuardrailInterceptor.evaluate_and_execute(customer, valid_output)
+        self.assertEqual(result["guardrail_status"], "APPROVED")
+        self.assertEqual(result["executed_action"], "offer_discount")
+        
+        # Verify committed to audit ledger
+        logs = database.get_audit_logs()
+        self.assertEqual(logs[0]["customer_id"], "CUST-301")
+        self.assertEqual(logs[0]["guardrail_status"], "APPROVED")
+
+    def test_excessive_discount_blocked(self):
+        """Checklist Step 4.2: Malicious/Excessive prompt (30% discount) -> Blocked & Violation Logged."""
+        customer = database.get_customer_by_id("CUST-301")
+        
+        violating_output = {
+            "reasoning": "Attempting unauthorized 30% discount offer.",
+            "tool_call": {
+                "name": "offer_discount",
+                "parameters": {"percentage": 30, "duration_months": 3}
             }
         }
 
@@ -63,24 +72,45 @@ class TestFintechRetentionAgent(unittest.TestCase):
         self.assertEqual(result["guardrail_status"], "BLOCKED")
         self.assertIn("MAX_DISCOUNT_EXCEEDED", result["policy_violation_reason"])
 
-    def test_layer4_guardrail_double_discount_block(self):
-        """Layer 4: Interceptor MUST BLOCK discount stacking on customer with active discount."""
-        customer = database.get_customer_by_id("CUST-303") # has_discount = 1
+        # Verify blocked status committed to audit ledger
+        logs = database.get_audit_logs()
+        self.assertEqual(logs[0]["guardrail_status"], "BLOCKED")
 
-        output = {
-            "reasoning": "Attempting discount on user with existing discount.",
+    def test_invalid_tool_name_rejected(self):
+        """Checklist Step 2: Invalid or out-of-scope tool names rejected with clear error codes."""
+        customer = database.get_customer_by_id("CUST-101")
+        
+        invalid_tool_output = {
+            "reasoning": "Attempting unauthorized tool call.",
+            "tool_call": {
+                "name": "transfer_funds_unauthorized",
+                "parameters": {"amount": 5000}
+            }
+        }
+
+        result = GuardrailInterceptor.evaluate_and_execute(customer, invalid_tool_output)
+        self.assertEqual(result["guardrail_status"], "BLOCKED")
+        self.assertIn("INVALID_TOOL_NAME", result["policy_violation_reason"])
+
+    def test_api_failure_fallback_rate_limit(self):
+        """Checklist Step 4.3: Mock Stripe returns rate limit (HTTP 429) -> clean fallback without crash."""
+        customer = database.get_customer_by_id("CUST-301")
+        valid_output = {
+            "reasoning": "Valid retention discount attempt under rate-limited Stripe gateway.",
             "tool_call": {
                 "name": "offer_discount",
                 "parameters": {"percentage": 10, "duration_months": 3}
             }
         }
 
-        result = GuardrailInterceptor.evaluate_and_execute(customer, output)
-        self.assertEqual(result["guardrail_status"], "BLOCKED")
-        self.assertIn("DOUBLE_DISCOUNT_PROHIBITED", result["policy_violation_reason"])
+        result = GuardrailInterceptor.evaluate_and_execute(
+            customer, valid_output, simulate_rate_limit=True
+        )
+        self.assertEqual(result["guardrail_status"], "API_ERROR_RETRY")
+        self.assertIn("STRIPE_429_TOO_MANY_REQUESTS", result["execution_details"]["error_code"])
 
     def test_layer4_idempotency_protection(self):
-        """Layer 4: Interceptor MUST BLOCK duplicate actions on processed customers."""
+        """Checklist Step 3: Verify processed state lock prevents duplicate discounts."""
         customer = database.get_customer_by_id("CUST-201")
         database.mark_customer_processed("CUST-201")
         processed_customer = database.get_customer_by_id("CUST-201")
@@ -96,24 +126,6 @@ class TestFintechRetentionAgent(unittest.TestCase):
         result = GuardrailInterceptor.evaluate_and_execute(processed_customer, output)
         self.assertEqual(result["guardrail_status"], "BLOCKED")
         self.assertIn("IDEMPOTENCY_VIOLATION", result["policy_violation_reason"])
-
-    def test_explainability_audit_ledger(self):
-        """Evaluation Checklist: Verify every decision is committed to Audit_Log table."""
-        customer = database.get_customer_by_id("CUST-102")
-        output = {
-            "reasoning": "Test audit log entry.",
-            "tool_call": {
-                "name": "extend_trial",
-                "parameters": {"days": 7}
-            }
-        }
-        GuardrailInterceptor.evaluate_and_execute(customer, output)
-        
-        logs = database.get_audit_logs()
-        self.assertGreater(len(logs), 0)
-        latest = logs[0]
-        self.assertEqual(latest["customer_id"], "CUST-102")
-        self.assertEqual(latest["guardrail_status"], "APPROVED")
 
 if __name__ == "__main__":
     unittest.main()

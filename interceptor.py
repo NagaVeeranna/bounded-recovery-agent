@@ -2,10 +2,18 @@ import database
 from mock_api import MockBillingAPI
 
 # --- HARDCODED COMPANY FINANCIAL & OPERATIONAL POLICIES ---
-MAX_DISCOUNT_PERCENTAGE = 20.0       # Max discount allowed without CFO approval
+MAX_DISCOUNT_PERCENTAGE = 15.0       # Strict company financial policy cap (15%)
 MAX_TRIAL_EXTENSION_DAYS = 14        # Max trial extension allowed
 MAX_PAUSE_DURATION_MONTHS = 3        # Max subscription pause allowed
 LTV_MAX_INTERVENTION_RATIO = 0.50   # Max cost allowed is 50% of 6-month LTV
+
+VALID_TOOL_NAMES = {
+    "offer_discount",
+    "extend_trial",
+    "pause_subscription",
+    "send_retention_email",
+    "schedule_customer_success_call"
+}
 
 class GuardrailInterceptor:
     """
@@ -13,7 +21,7 @@ class GuardrailInterceptor:
     BEFORE allowing interaction with billing APIs or databases.
     """
     @staticmethod
-    def evaluate_and_execute(customer, llm_output, auto_remediate_violators=False):
+    def evaluate_and_execute(customer, llm_output, auto_remediate_violators=False, simulate_api_error=False, simulate_rate_limit=False):
         customer_id = customer["id"]
         ml_risk_score = customer.get("risk_score", 0.0)
         raw_reasoning = llm_output.get("reasoning", "No reasoning provided.")
@@ -22,7 +30,28 @@ class GuardrailInterceptor:
         action_name = tool_call.get("name", "UNKNOWN_ACTION")
         params = tool_call.get("parameters", {})
 
-        # --- GUARDRAIL CHECK 1: IDEMPOTENCY SAFETY ---
+        # --- GUARDRAIL CHECK 1: INVALID / OUT-OF-SCOPE TOOL NAME ---
+        if action_name not in VALID_TOOL_NAMES:
+            violation_msg = f"INVALID_TOOL_NAME: Proposed action '{action_name}' is not recognized or authorized within the safety scope."
+            database.log_audit_entry(
+                customer_id=customer_id,
+                ml_risk_score=ml_risk_score,
+                raw_llm_reasoning=raw_reasoning,
+                proposed_action=action_name,
+                action_params=params,
+                guardrail_status="BLOCKED",
+                policy_violation_reason=violation_msg,
+                final_executed_action="NONE",
+                execution_details={"error_code": "INVALID_TOOL_NAME", "message": violation_msg}
+            )
+            return {
+                "guardrail_status": "BLOCKED",
+                "policy_violation_reason": violation_msg,
+                "executed_action": "NONE",
+                "execution_details": {"error_code": "INVALID_TOOL_NAME", "message": violation_msg}
+            }
+
+        # --- GUARDRAIL CHECK 2: IDEMPOTENCY SAFETY ---
         if customer.get("processed") == 1:
             violation_msg = "IDEMPOTENCY_VIOLATION: Customer account has already been processed in a prior pipeline run. Action blocked to prevent duplicate interventions."
             database.log_audit_entry(
@@ -34,18 +63,18 @@ class GuardrailInterceptor:
                 guardrail_status="BLOCKED",
                 policy_violation_reason=violation_msg,
                 final_executed_action="NONE",
-                execution_details={"error": violation_msg}
+                execution_details={"error_code": "IDEMPOTENCY_VIOLATION", "message": violation_msg}
             )
             return {
                 "guardrail_status": "BLOCKED",
                 "policy_violation_reason": violation_msg,
                 "executed_action": "NONE",
-                "execution_details": None
+                "execution_details": {"error_code": "IDEMPOTENCY_VIOLATION", "message": violation_msg}
             }
 
         policy_violations = []
 
-        # --- GUARDRAIL CHECK 2: DISCOUNT PERCENTAGE CAP ---
+        # --- GUARDRAIL CHECK 3: DISCOUNT PERCENTAGE CAP ---
         if action_name == "offer_discount":
             pct = params.get("percentage", 0)
             if pct > MAX_DISCOUNT_PERCENTAGE:
@@ -53,13 +82,13 @@ class GuardrailInterceptor:
                     f"MAX_DISCOUNT_EXCEEDED: Proposed discount of {pct}% exceeds maximum authorized limit of {MAX_DISCOUNT_PERCENTAGE}%."
                 )
 
-            # --- GUARDRAIL CHECK 3: DOUBLE-DISCOUNT POLICY ---
+            # --- GUARDRAIL CHECK 4: DOUBLE-DISCOUNT POLICY ---
             if customer.get("has_discount") == 1:
                 policy_violations.append(
                     "DOUBLE_DISCOUNT_PROHIBITED: Customer already has an active discount on file. Discount stacking is strictly prohibited."
                 )
 
-            # --- GUARDRAIL CHECK 4: FINANCIAL LTV BOUNDARY ---
+            # --- GUARDRAIL CHECK 5: FINANCIAL LTV BOUNDARY ---
             duration = params.get("duration_months", 1)
             monthly_mrr = customer.get("mrr", 0)
             total_discount_cost = monthly_mrr * (pct / 100.0) * duration
@@ -71,7 +100,7 @@ class GuardrailInterceptor:
                     f"LTV_CAP_EXCEEDED: Total retention cost (${total_discount_cost:.2f}) exceeds 50% 6-month LTV cap (${max_allowed_cost:.2f})."
                 )
 
-        # --- GUARDRAIL CHECK 5: TRIAL EXTENSION LIMIT ---
+        # --- GUARDRAIL CHECK 6: TRIAL EXTENSION LIMIT ---
         elif action_name == "extend_trial":
             days = params.get("days", 0)
             if days > MAX_TRIAL_EXTENSION_DAYS:
@@ -79,7 +108,7 @@ class GuardrailInterceptor:
                     f"MAX_TRIAL_EXCEEDED: Proposed trial extension of {days} days exceeds maximum authorized limit of {MAX_TRIAL_EXTENSION_DAYS} days."
                 )
 
-        # --- GUARDRAIL CHECK 6: SUBSCRIPTION PAUSE LIMIT ---
+        # --- GUARDRAIL CHECK 7: SUBSCRIPTION PAUSE LIMIT ---
         elif action_name == "pause_subscription":
             duration = params.get("duration_months", 0)
             if duration > MAX_PAUSE_DURATION_MONTHS:
@@ -89,8 +118,31 @@ class GuardrailInterceptor:
 
         # --- VERDICT EVALUATION ---
         if not policy_violations:
-            # Policy Passed -> Execute Action
-            exec_result = GuardrailInterceptor._dispatch_action(customer_id, action_name, params)
+            # Policy Passed -> Execute Action (handles simulated API errors gracefully)
+            exec_result = GuardrailInterceptor._dispatch_action(
+                customer_id, action_name, params, simulate_error=simulate_api_error, simulate_rate_limit=simulate_rate_limit
+            )
+
+            # If gateway error or rate limit, log status without corrupting idempotency flag
+            if exec_result.get("status") in ["RATE_LIMITED", "GATEWAY_ERROR"]:
+                database.log_audit_entry(
+                    customer_id=customer_id,
+                    ml_risk_score=ml_risk_score,
+                    raw_llm_reasoning=raw_reasoning,
+                    proposed_action=action_name,
+                    action_params=params,
+                    guardrail_status="API_ERROR_RETRY",
+                    policy_violation_reason=exec_result.get("message"),
+                    final_executed_action="NONE",
+                    execution_details=exec_result
+                )
+                return {
+                    "guardrail_status": "API_ERROR_RETRY",
+                    "policy_violation_reason": exec_result.get("message"),
+                    "executed_action": "NONE",
+                    "execution_details": exec_result
+                }
+
             database.mark_customer_processed(customer_id, new_status="RETAINED")
             database.log_audit_entry(
                 customer_id=customer_id,
@@ -115,7 +167,7 @@ class GuardrailInterceptor:
             violation_summary = " | ".join(policy_violations)
 
             if auto_remediate_violators and action_name == "offer_discount" and customer.get("has_discount") == 0:
-                # Remediation: Cap discount percentage at 20%
+                # Remediation: Cap discount percentage at policy max (15%)
                 remediated_params = dict(params)
                 remediated_params["percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
                 
@@ -161,10 +213,13 @@ class GuardrailInterceptor:
             }
 
     @staticmethod
-    def _dispatch_action(customer_id, action_name, params):
+    def _dispatch_action(customer_id, action_name, params, simulate_error=False, simulate_rate_limit=False):
         """Dispatches approved tool call to the Mock Billing API."""
         if action_name == "offer_discount":
-            return MockBillingAPI.apply_discount(customer_id, params.get("percentage", 10), params.get("duration_months", 3))
+            return MockBillingAPI.apply_discount(
+                customer_id, params.get("percentage", 10), params.get("duration_months", 3),
+                simulate_error=simulate_error, simulate_rate_limit=simulate_rate_limit
+            )
         elif action_name == "extend_trial":
             return MockBillingAPI.extend_trial(customer_id, params.get("days", 7))
         elif action_name == "pause_subscription":
@@ -174,4 +229,4 @@ class GuardrailInterceptor:
         elif action_name == "schedule_customer_success_call":
             return MockBillingAPI.schedule_customer_success_call(customer_id, params.get("urgency", "MEDIUM"))
         else:
-            return {"status": "ERROR", "message": f"Unknown action '{action_name}'"}
+            return {"status": "ERROR", "error_code": "UNKNOWN_ACTION", "message": f"Unknown action '{action_name}'"}

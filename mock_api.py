@@ -2,13 +2,31 @@ import database
 
 class MockBillingAPI:
     """
-    Simulates interactions with external billing gateways (Stripe/Chargebee) and CRM systems.
+    Simulates external billing gateways (Stripe / Chargebee) and CRM system mutations,
+    including rate-limit handling, 500 error retries, and clean fallbacks.
     """
     @staticmethod
-    def apply_discount(customer_id, percentage, duration_months):
+    def apply_discount(customer_id, percentage, duration_months, simulate_error=False, simulate_rate_limit=False):
+        # Handle simulated rate limit or 500 server error
+        if simulate_rate_limit:
+            return {
+                "status": "RATE_LIMITED",
+                "error_code": "STRIPE_429_TOO_MANY_REQUESTS",
+                "message": "Stripe API rate limit encountered (HTTP 429). Action scheduled for automatic retry.",
+                "retry_recommended": True
+            }
+        
+        if simulate_error:
+            return {
+                "status": "GATEWAY_ERROR",
+                "error_code": "STRIPE_500_INTERNAL_ERROR",
+                "message": "Stripe Gateway 500 Error. Fallback: Logged issue and alerted engineering team.",
+                "retry_recommended": True
+            }
+
         customer = database.get_customer_by_id(customer_id)
         if not customer:
-            return {"status": "ERROR", "message": "Customer not found"}
+            return {"status": "ERROR", "error_code": "CUSTOMER_NOT_FOUND", "message": f"Customer {customer_id} not found."}
         
         # Apply discount in database
         conn = database.get_db_connection()
