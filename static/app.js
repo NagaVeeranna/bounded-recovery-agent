@@ -187,7 +187,7 @@ async function runBatchPipeline() {
             body: JSON.stringify({})
         });
         const data = await res.json();
-        alert("Razorpay autonomous batch execution completed!");
+        alert("Autonomous batch execution completed!");
         loadDashboardData();
     } catch (err) {
         alert("Batch pipeline error: " + err);
@@ -230,7 +230,7 @@ function showTraceModal(customerId, data) {
     const title = document.getElementById("modal-title");
     const content = document.getElementById("modal-content");
 
-    title.innerText = `Razorpay Execution Trace for ${customerId}`;
+    title.innerText = `Execution Trace for ${customerId}`;
     
     const formattedJson = JSON.stringify(data, null, 2);
     content.innerHTML = `<pre style="color: #6366f1;">${formattedJson}</pre>`;
@@ -246,7 +246,7 @@ function updateSimParams() {
     document.getElementById("sim-params-discount").classList.add("hidden");
     document.getElementById("sim-params-trial").classList.add("hidden");
 
-    if (action === "apply_razorpay_coupon" || action === "offer_discount") {
+    if (action === "apply_retention_coupon" || action === "offer_discount") {
         document.getElementById("sim-params-discount").classList.remove("hidden");
     } else if (action === "extend_trial") {
         document.getElementById("sim-params-trial").classList.remove("hidden");
@@ -259,14 +259,14 @@ async function runGuardrailSimulation(e) {
     const actionName = document.getElementById("sim-action-name").value;
     
     let params = {};
-    if (actionName === "apply_razorpay_coupon" || actionName === "offer_discount") {
+    if (actionName === "apply_retention_coupon" || actionName === "offer_discount") {
         params = {
             discount_percentage: parseFloat(document.getElementById("sim-param-pct").value),
             duration_months: parseInt(document.getElementById("sim-param-duration").value)
         };
-    } else if (actionName === "razorpay_smart_retry") {
-        params = { gateway_priority: "OPTIMUS_HIGH" };
-    } else if (actionName === "create_razorpay_payment_link") {
+    } else if (actionName === "trigger_smart_retry") {
+        params = { gateway_priority: "HIGH" };
+    } else if (actionName === "create_recovery_payment_link") {
         params = { amount_inr: 5000, expires_in_hours: 24 };
     } else if (actionName === "pause_subscription") {
         params = { duration_months: 3 };
@@ -299,7 +299,7 @@ async function runGuardrailSimulation(e) {
 ${statusText}
 
 ----------------------------------------------------
-PROPOSED RAZORPAY TOOL CALL:
+PROPOSED TOOL CALL:
 Action: ${actionName}
 Params: ${JSON.stringify(params)}
 

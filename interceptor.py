@@ -1,13 +1,13 @@
 import database
-from mock_api import MockRazorpayAPI
+from mock_api import MockBillingAPI
 from config import Config
 
 VALID_TOOL_NAMES = {
-    "razorpay_smart_retry",
+    "trigger_smart_retry",
     "enable_upi_autopay_mandate",
-    "create_razorpay_payment_link",
+    "create_recovery_payment_link",
     "send_whatsapp_payment_reminder",
-    "apply_razorpay_coupon",
+    "apply_retention_coupon",
     "offer_discount",
     "extend_trial",
     "pause_subscription"
@@ -16,7 +16,7 @@ VALID_TOOL_NAMES = {
 class GuardrailInterceptor:
     """
     Evaluates raw LLM proposed retention actions against deterministic company policies
-    BEFORE allowing interaction with Razorpay billing APIs or databases.
+    BEFORE allowing interaction with billing APIs or databases.
     Enforces Config constants for discount caps, trial limits, and LTV boundaries.
     """
     @staticmethod
@@ -74,7 +74,7 @@ class GuardrailInterceptor:
         policy_violations = []
 
         # --- GUARDRAIL CHECK 3: COUPON / DISCOUNT PERCENTAGE CAP ---
-        if action_name in ["apply_razorpay_coupon", "offer_discount"]:
+        if action_name in ["apply_retention_coupon", "offer_discount"]:
             pct = params.get("discount_percentage", params.get("percentage", 0))
             if pct > Config.MAX_DISCOUNT_PERCENTAGE:
                 policy_violations.append(
@@ -165,7 +165,7 @@ class GuardrailInterceptor:
             # Policy Violated -> Handle Block or Auto-Remediation
             violation_summary = " | ".join(policy_violations)
 
-            if auto_remediate_violators and action_name in ["apply_razorpay_coupon", "offer_discount"] and customer.get("has_discount") == 0:
+            if auto_remediate_violators and action_name in ["apply_retention_coupon", "offer_discount"] and customer.get("has_discount") == 0:
                 remediated_params = dict(params)
                 if "discount_percentage" in remediated_params:
                     remediated_params["discount_percentage"] = int(Config.MAX_DISCOUNT_PERCENTAGE)
@@ -215,24 +215,24 @@ class GuardrailInterceptor:
 
     @staticmethod
     def _dispatch_action(customer_id, action_name, params, simulate_error=False, simulate_rate_limit=False):
-        """Dispatches approved tool call to MockRazorpayAPI."""
-        if action_name == "razorpay_smart_retry":
-            return MockRazorpayAPI.razorpay_smart_retry(customer_id, params.get("gateway_priority", "OPTIMUS_HIGH"))
+        """Dispatches approved tool call to MockBillingAPI."""
+        if action_name == "trigger_smart_retry":
+            return MockBillingAPI.trigger_smart_retry(customer_id, params.get("gateway_priority", "HIGH"))
         elif action_name == "enable_upi_autopay_mandate":
-            return MockRazorpayAPI.enable_upi_autopay_mandate(customer_id, params.get("vpa_handle"))
-        elif action_name == "create_razorpay_payment_link":
-            return MockRazorpayAPI.create_razorpay_payment_link(customer_id, params.get("amount_inr", 1000), params.get("expires_in_hours", 24))
-        elif action_name in ["apply_razorpay_coupon", "offer_discount"]:
+            return MockBillingAPI.enable_upi_autopay_mandate(customer_id, params.get("vpa_handle"))
+        elif action_name == "create_recovery_payment_link":
+            return MockBillingAPI.create_recovery_payment_link(customer_id, params.get("amount_inr", 1000), params.get("expires_in_hours", 24))
+        elif action_name in ["apply_retention_coupon", "offer_discount"]:
             pct = params.get("discount_percentage", params.get("percentage", 10))
-            return MockRazorpayAPI.apply_razorpay_coupon(
+            return MockBillingAPI.apply_retention_coupon(
                 customer_id, pct, params.get("duration_months", 3),
                 simulate_error=simulate_error, simulate_rate_limit=simulate_rate_limit
             )
         elif action_name == "send_whatsapp_payment_reminder":
-            return MockRazorpayAPI.send_whatsapp_payment_reminder(customer_id, params.get("template_id", "PAYMENT_DUNNING_WHATSAPP"))
+            return MockBillingAPI.send_whatsapp_payment_reminder(customer_id, params.get("template_id", "PAYMENT_DUNNING_WHATSAPP"))
         elif action_name == "pause_subscription":
-            return MockRazorpayAPI.pause_subscription(customer_id, params.get("duration_months", 1))
+            return MockBillingAPI.pause_subscription(customer_id, params.get("duration_months", 1))
         elif action_name == "extend_trial":
-            return MockRazorpayAPI.extend_trial(customer_id, params.get("days", 7))
+            return MockBillingAPI.extend_trial(customer_id, params.get("days", 7))
         else:
             return {"status": "ERROR", "error_code": "UNKNOWN_ACTION", "message": f"Unknown action '{action_name}'"}

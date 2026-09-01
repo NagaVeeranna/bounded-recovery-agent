@@ -18,7 +18,7 @@ def init_db():
     cursor.execute("DROP TABLE IF EXISTS audit_log")
     cursor.execute("DROP TABLE IF EXISTS customers")
 
-    # Razorpay-Tailored Customers table with merchant & payment behavior metrics
+    # Customers table with merchant & payment behavior metrics
     cursor.execute("""
     CREATE TABLE customers (
         id TEXT PRIMARY KEY,
@@ -64,9 +64,9 @@ def init_db():
 
 def seed_synthetic_data():
     """
-    Populates database with realistic Razorpay payment & merchant behavioral data:
+    Populates database with realistic payment & merchant behavioral data:
     1. Healthy Subscriptions (Low churn risk)
-    2. Involuntary Churn (Payment Mandate Failures & Card Expirations - Razorpay Dunning Target)
+    2. Involuntary Churn (Payment Mandate Failures & Card Expirations)
     3. Voluntary Churn (Merchant/User Inactivity & High Payment Drop-off)
     """
     init_db()
@@ -76,7 +76,7 @@ def seed_synthetic_data():
     synthetic_customers = [
         # --- Persona 1: Healthy Merchant Subscriptions ---
         {
-            "id": "RZP-CUST-101",
+            "id": "CUST-101",
             "name": "Apex Logistics India",
             "email": "payments@apexlogistics.in",
             "merchant_category": "SaaS Subscriptions",
@@ -90,7 +90,7 @@ def seed_synthetic_data():
             "has_discount": 0
         },
         {
-            "id": "RZP-CUST-102",
+            "id": "CUST-102",
             "name": "Nexus Cloud Infra",
             "email": "billing@nexuscloud.in",
             "merchant_category": "SaaS Subscriptions",
@@ -103,9 +103,9 @@ def seed_synthetic_data():
             "card_expiring_soon": 0,
             "has_discount": 0
         },
-        # --- Persona 2: Involuntary Churn (Razorpay Smart Retry & Dunning Target) ---
+        # --- Persona 2: Involuntary Churn (Smart Retry & Dunning Target) ---
         {
-            "id": "RZP-CUST-201",
+            "id": "CUST-201",
             "name": "FinTech Global Solutions",
             "email": "finance@fintechglobal.in",
             "merchant_category": "EdTech",
@@ -119,7 +119,7 @@ def seed_synthetic_data():
             "has_discount": 0
         },
         {
-            "id": "RZP-CUST-202",
+            "id": "CUST-202",
             "name": "Vance Media House",
             "email": "accounts@vancemedia.in",
             "merchant_category": "D2C Brand",
@@ -134,7 +134,7 @@ def seed_synthetic_data():
         },
         # --- Persona 3: Voluntary Churn (Merchant Ghosting & Zero Transactions) ---
         {
-            "id": "RZP-CUST-301",
+            "id": "CUST-301",
             "name": "TechCorp India (Robert Sterling)",
             "email": "rsterling@techcorp.in",
             "merchant_category": "Enterprise SaaS",
@@ -148,7 +148,7 @@ def seed_synthetic_data():
             "has_discount": 0
         },
         {
-            "id": "RZP-CUST-302",
+            "id": "CUST-302",
             "name": "Bright Design Studio",
             "email": "amanda@brightdesign.in",
             "merchant_category": "Agency",
@@ -163,7 +163,7 @@ def seed_synthetic_data():
         },
         # --- Edge Case: At-risk Merchant with existing active coupon (Testing Double-Discount Guard) ---
         {
-            "id": "RZP-CUST-303",
+            "id": "CUST-303",
             "name": "HyperScale Ventures",
             "email": "leo@hyperscale.in",
             "merchant_category": "Gaming & Digital",
@@ -190,7 +190,7 @@ def seed_synthetic_data():
 
     conn.commit()
     conn.close()
-    print(f"Successfully initialized Razorpay database with {len(synthetic_customers)} synthetic merchants.")
+    print(f"Successfully initialized database with {len(synthetic_customers)} synthetic merchants.")
 
 def update_customer_risk(customer_id, risk_score, risk_status):
     conn = get_db_connection()

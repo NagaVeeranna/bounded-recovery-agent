@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Razorpay Churn Sentinel | Bounded Autonomous Retention Agent</title>
+    <title>Retention Sentinel | Bounded Autonomous Retention Agent</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +22,7 @@
                     <i class="fa-solid fa-bolt"></i>
                 </div>
                 <div class="brand-text">
-                    <h2>Razorpay Sentinel</h2>
+                    <h2>Retention Sentinel</h2>
                     <span>Autonomous Churn Recovery</span>
                 </div>
             </div>
@@ -35,7 +35,7 @@
                     <i class="fa-solid fa-receipt"></i> Explainability Ledger
                 </a>
                 <a href="#simulator" class="nav-item" onclick="switchTab('simulator')">
-                    <i class="fa-solid fa-sliders"></i> Razorpay Dunning Simulator
+                    <i class="fa-solid fa-sliders"></i> Dunning Policy Simulator
                 </a>
                 <a href="#idempotency" class="nav-item" onclick="switchTab('idempotency')">
                     <i class="fa-solid fa-arrows-rotate"></i> Idempotency Verification
@@ -46,7 +46,7 @@
                 <div class="system-status">
                     <span class="status-indicator online"></span>
                     <div class="status-info">
-                        <strong>Razorpay Guardrails Active</strong>
+                        <strong>Financial Guardrails Active</strong>
                         <small>Max 15% Coupon & Retry Caps</small>
                     </div>
                 </div>
@@ -58,7 +58,7 @@
             <!-- Header Bar -->
             <header class="top-header">
                 <div class="header-title">
-                    <h1>Razorpay Merchant Churn Recovery Architecture</h1>
+                    <h1>Merchant Churn Recovery Architecture</h1>
                     <p>Separating Churn Predictive Intelligence from Agentic Dunning under Strict Financial Guardrails</p>
                 </div>
                 <div class="header-actions">
@@ -131,7 +131,7 @@
                                 <tr>
                                     <th>Merchant Account</th>
                                     <th>Category & GMV</th>
-                                    <th>Razorpay Payment Metrics</th>
+                                    <th>Payment Behavior Metrics</th>
                                     <th>Mandate Status</th>
                                     <th>ML Risk Score</th>
                                     <th>Trigger Status</th>
@@ -153,7 +153,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Audit Ledger (Permanent Decision History)</h3>
-                            <p class="subtitle">100% Explainable: Trace exact Risk Score, Prompt Reasoning, Interceptor Verdict, and Razorpay API execution</p>
+                            <p class="subtitle">100% Explainable: Trace exact Risk Score, Prompt Reasoning, Interceptor Verdict, and API execution</p>
                         </div>
                         <button class="btn btn-sm btn-outline" onclick="loadAuditLogs()">
                             <i class="fa-solid fa-arrows-rotate"></i> Refresh Audit Log
@@ -169,7 +169,7 @@
                                     <th>Raw LLM Reasoning</th>
                                     <th>Proposed Action</th>
                                     <th>Guardrail Verdict</th>
-                                    <th>Policy Reason / Razorpay API Output</th>
+                                    <th>Policy Reason / Execution Details</th>
                                 </tr>
                             </thead>
                             <tbody id="audit-table-body">
@@ -185,25 +185,25 @@
                 <div class="grid-2">
                     <div class="card glass">
                         <div class="card-header">
-                            <h3>Test Razorpay Policy Interceptor</h3>
+                            <h3>Test Policy Interceptor</h3>
                             <p class="subtitle">Simulate AI proposing policy-violating actions to verify hard financial barriers</p>
                         </div>
                         <form id="simulator-form" onsubmit="runGuardrailSimulation(event)">
                             <div class="form-group">
                                 <label>Target Merchant Account</label>
                                 <select id="sim-customer-id" class="form-control">
-                                    <option value="RZP-CUST-301">RZP-CUST-301 (TechCorp India - Enterprise ₹1,20,000/mo)</option>
-                                    <option value="RZP-CUST-303">RZP-CUST-303 (HyperScale Ventures - Has Active Coupon!)</option>
-                                    <option value="RZP-CUST-201">RZP-CUST-201 (FinTech Global - Mandate Failure)</option>
+                                    <option value="CUST-301">CUST-301 (TechCorp India - Enterprise ₹1,20,000/mo)</option>
+                                    <option value="CUST-303">CUST-303 (HyperScale Ventures - Has Active Coupon!)</option>
+                                    <option value="CUST-201">CUST-201 (FinTech Global - Mandate Failure)</option>
                                 </select>
                             </div>
 
                             <div class="form-group">
                                 <label>Proposed Action Tool Call</label>
                                 <select id="sim-action-name" class="form-control" onchange="updateSimParams()">
-                                    <option value="apply_razorpay_coupon">apply_razorpay_coupon(discount_percentage, duration_months)</option>
-                                    <option value="razorpay_smart_retry">razorpay_smart_retry(gateway_priority)</option>
-                                    <option value="create_razorpay_payment_link">create_razorpay_payment_link(amount_inr, expires_in_hours)</option>
+                                    <option value="apply_retention_coupon">apply_retention_coupon(discount_percentage, duration_months)</option>
+                                    <option value="trigger_smart_retry">trigger_smart_retry(gateway_priority)</option>
+                                    <option value="create_recovery_payment_link">create_recovery_payment_link(amount_inr, expires_in_hours)</option>
                                     <option value="pause_subscription">pause_subscription(duration_months)</option>
                                 </select>
                             </div>
@@ -259,7 +259,7 @@
                     <div class="idempotency-box">
                         <div class="idempotency-explanation">
                             <h4><i class="fa-solid fa-lock text-emerald"></i> Hard State Lock (`processed = 1`)</h4>
-                            <p>When the Razorpay agent acts on an at-risk merchant, the database immediately commits a <code>processed = 1</code> flag alongside a timestamped ledger entry. Subsequent agent triggers on the same account are intercepted mathematically before any Razorpay API calls occur.</p>
+                            <p>When the agent acts on an at-risk merchant, the database immediately commits a <code>processed = 1</code> flag alongside a timestamped ledger entry. Subsequent agent triggers on the same account are intercepted mathematically before any API calls occur.</p>
                         </div>
                         
                         <div class="action-row">

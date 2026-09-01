@@ -1,7 +1,8 @@
 import json
 import sys
 import database
-from predictor import run_predictive_pipeline, RISK_TRIGGER_THRESHOLD
+from predictor import run_predictive_pipeline
+from config import Config
 from agent import RetentionAgent
 from interceptor import GuardrailInterceptor
 
@@ -11,7 +12,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 def run_autonomous_pipeline(auto_remediate=False):
     print("\n=======================================================")
-    print(" [RAZORPAY AUTONOMOUS CHURN RECOVERY AGENT PIPELINE] ")
+    print(" [AUTONOMOUS FINTECH CHURN RECOVERY AGENT PIPELINE] ")
     print("=======================================================\n")
 
     # Step 1: Layer 1 - Load/Verify Database
@@ -39,20 +40,20 @@ def run_autonomous_pipeline(auto_remediate=False):
         print(f"[{idx}/{len(at_risk_customers)}] Processing Merchant: {customer['id']} - {customer['name']}")
         print(f"    Category: {customer['merchant_category']} | MRR/GMV=₹{customer['mrr']} | Last Transaction={customer['days_since_last_transaction']}d ago")
         print(f"    Failure Rate={customer['payment_failure_rate']*100:.1f}% | Failed Mandates={customer['failed_payment_count']} | Status={customer['mandate_status']}")
-        print(f"    ML Risk Score: {customer['risk_score']}% (Triggered > {RISK_TRIGGER_THRESHOLD}%)")
+        print(f"    ML Risk Score: {customer['risk_score']}% (Triggered > {Config.RISK_TRIGGER_THRESHOLD}%)")
 
         # Check Idempotency before calling LLM
         if customer.get("processed") == 1:
             print("    [IDEMPOTENCY ALERT]: Merchant already processed in prior run.")
 
         # Layer 3: Reasoning Engine
-        print("    [Reasoning Engine] Generating Razorpay recovery strategy...")
+        print("    [Reasoning Engine] Generating recovery strategy...")
         llm_output = agent.generate_strategy(customer)
         print(f"    [LLM Reasoning]: \"{llm_output.get('reasoning')}\"")
         print(f"    [LLM Proposed Action]: {json.dumps(llm_output.get('tool_call'))}")
 
         # Layer 4: Interceptor Check
-        print("    [Guardrail Interceptor] Validating proposed action against Razorpay company financial policies...")
+        print("    [Guardrail Interceptor] Validating proposed action against company financial policies...")
         interceptor_result = GuardrailInterceptor.evaluate_and_execute(
             customer=customer,
             llm_output=llm_output,
@@ -63,12 +64,12 @@ def run_autonomous_pipeline(auto_remediate=False):
         if status == "APPROVED":
             results_summary["approved_actions"] += 1
             print(f"    [VERDICT]: APPROVED")
-            print(f"    [Razorpay API Execution]: {interceptor_result['execution_details']}")
+            print(f"    [API Execution]: {interceptor_result['execution_details']}")
         elif status == "AUTO_REMEDIATED":
             results_summary["remediated_actions"] += 1
             print(f"    [VERDICT]: AUTO-REMEDIATED (Capping policy violation)")
             print(f"    [Policy Reason]: {interceptor_result['policy_violation_reason']}")
-            print(f"    [Razorpay API Execution]: {interceptor_result['execution_details']}")
+            print(f"    [API Execution]: {interceptor_result['execution_details']}")
         else:
             results_summary["blocked_actions"] += 1
             print(f"    [VERDICT]: BLOCKED (Hard Financial Barrier Triggered)")

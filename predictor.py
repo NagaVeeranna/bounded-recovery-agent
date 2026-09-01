@@ -3,8 +3,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import database
-
-RISK_TRIGGER_THRESHOLD = 75.0  # 75% risk threshold triggers LLM reasoning engine
+from config import Config
 
 class ChurnPredictor:
     def __init__(self):
@@ -14,7 +13,7 @@ class ChurnPredictor:
 
     def generate_training_dataset(self, num_samples=500):
         """
-        Generates synthetic historical training data tailored to Razorpay payment behaviors:
+        Generates synthetic historical training data tailored to merchant payment behaviors:
         Features: payment_failure_rate, days_since_last_transaction, failed_payment_count, card_expiring_soon, avg_transaction_value.
         """
         np.random.seed(42)
@@ -27,7 +26,7 @@ class ChurnPredictor:
         card_expiring_soon = np.random.choice([0, 1], size=num_samples, p=[0.8, 0.2])
         avg_transaction_value = np.random.uniform(500, 50000, size=num_samples)
 
-        # True risk formula for generating Razorpay churn ground truth
+        # True risk formula for generating churn ground truth
         risk_score_raw = (
             (days_since_last_transaction / 30.0) * 35.0 +
             (payment_failure_rate) * 40.0 +
@@ -49,7 +48,7 @@ class ChurnPredictor:
         return df
 
     def train(self):
-        """Trains the ML model on synthetic Razorpay payment behavioral data."""
+        """Trains the ML model on synthetic payment behavioral data."""
         df = self.generate_training_dataset()
         X = df[["days_since_last_transaction", "payment_failure_rate", "failed_payment_count", "card_expiring_soon", "avg_transaction_value"]]
         y = df["churned"]
@@ -57,11 +56,11 @@ class ChurnPredictor:
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y)
         self.is_trained = True
-        print("[Predictive Engine] Razorpay ML Classifier model trained successfully.")
+        print("[Predictive Engine] ML Classifier model trained successfully.")
 
     def predict_risk_score(self, customer):
         """
-        Calculates a deterministic risk score (0 - 100%) for a given Razorpay merchant profile.
+        Calculates a deterministic risk score (0 - 100%) for a given merchant profile.
         """
         if not self.is_trained:
             self.train()
@@ -79,7 +78,7 @@ class ChurnPredictor:
         # Get probability of churn from ML classifier
         probability_churn = self.model.predict_proba(features_scaled)[0][1]
         
-        # Domain rules (Razorpay Mandate & Payment Failure Boost)
+        # Domain rules (Mandate & Payment Failure Boost)
         domain_boost = 0.0
         if customer.get("mandate_status") == "FAILED_RETRY" or (customer["card_expiring_soon"] == 1 and customer["failed_payment_count"] > 0):
             domain_boost += 0.25 # Significant payment default risk
@@ -101,24 +100,24 @@ def run_predictive_pipeline():
     at_risk_customers = []
 
     print("\n=======================================================")
-    print("   LAYER 2: RAZORPAY PREDICTIVE ENGINE (0 - 100%)      ")
+    print("   LAYER 2: PREDICTIVE ENGINE EVALUATION (0 - 100%)    ")
     print("=======================================================")
 
     for c in customers:
         risk_score = predictor.predict_risk_score(c)
-        risk_status = "AT_RISK" if risk_score >= RISK_TRIGGER_THRESHOLD else "HEALTHY"
+        risk_status = "AT_RISK" if risk_score >= Config.RISK_TRIGGER_THRESHOLD else "HEALTHY"
         
         database.update_customer_risk(c["id"], risk_score, risk_status)
         c["risk_score"] = risk_score
         c["risk_status"] = risk_status
 
-        status_flag = "[TRIGGERED -> PASS TO AGENT]" if risk_score >= RISK_TRIGGER_THRESHOLD else "[HEALTHY -> FILTERED OUT]"
+        status_flag = "[TRIGGERED -> PASS TO AGENT]" if risk_score >= Config.RISK_TRIGGER_THRESHOLD else "[HEALTHY -> FILTERED OUT]"
         print(f"Merchant {c['id']} ({c['name']}): Risk Score = {risk_score}% | Category: {c['merchant_category']} | Status: {risk_status} {status_flag}")
 
-        if risk_score >= RISK_TRIGGER_THRESHOLD:
+        if risk_score >= Config.RISK_TRIGGER_THRESHOLD:
             at_risk_customers.append(c)
 
-    print(f"\n[Predictive Engine] Summary: {len(at_risk_customers)} out of {len(customers)} accounts passed threshold (> {RISK_TRIGGER_THRESHOLD}%).")
+    print(f"\n[Predictive Engine] Summary: {len(at_risk_customers)} out of {len(customers)} accounts passed threshold (> {Config.RISK_TRIGGER_THRESHOLD}%).")
     return at_risk_customers
 
 if __name__ == "__main__":

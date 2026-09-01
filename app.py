@@ -66,19 +66,19 @@ def get_metrics():
 def seed_data():
     database.seed_synthetic_data()
     predictor.run_predictive_pipeline()
-    return jsonify({"success": True, "message": "Razorpay database re-seeded with merchant behavioral personas."})
+    return jsonify({"success": True, "message": "Database re-seeded with merchant behavioral personas."})
 
 @app.route("/api/train-ml", methods=["POST"])
 def train_ml():
     customers = predictor.run_predictive_pipeline()
-    return jsonify({"success": True, "message": f"Razorpay ML model retrained. {len(customers)} at-risk merchants identified."})
+    return jsonify({"success": True, "message": f"ML model retrained. {len(customers)} at-risk merchants identified."})
 
 @app.route("/api/process-all", methods=["POST"])
 def process_all():
     data = request.get_json(force=True, silent=True) or {}
     auto_remediate = data.get("auto_remediate", False)
     run_autonomous_pipeline(auto_remediate=auto_remediate)
-    return jsonify({"success": True, "message": "Razorpay autonomous churn recovery pipeline executed."})
+    return jsonify({"success": True, "message": "Autonomous churn recovery pipeline executed."})
 
 @app.route("/api/process-customer/<customer_id>", methods=["POST"])
 def process_customer(customer_id):
@@ -115,18 +115,18 @@ def process_customer(customer_id):
         "interceptor_result": interceptor_result
     })
 
-# --- RAZORPAY WEBHOOK INTEGRATION ENDPOINT ---
-@app.route("/api/webhooks/razorpay/payment-failed", methods=["POST"])
-def razorpay_payment_failed_webhook():
+# --- PAYMENT WEBHOOK INTEGRATION ENDPOINT ---
+@app.route("/api/webhooks/payment-failed", methods=["POST"])
+def payment_failed_webhook():
     """
-    Simulates receiving a Razorpay 'payment.failed' webhook event.
+    Simulates receiving a 'payment.failed' webhook event from gateway.
     Automatically triggers the autonomous retention agent for the target merchant.
     """
     data = request.get_json(force=True, silent=True) or {}
     payload = data.get("payload", {})
     payment_entity = payload.get("payment", {}).get("entity", {})
 
-    customer_id = payment_entity.get("customer_id", data.get("customer_id", "RZP-CUST-201"))
+    customer_id = payment_entity.get("customer_id", data.get("customer_id", "CUST-201"))
     payment_id = payment_entity.get("id", "pay_mock_webhook_999")
     amount_inr = payment_entity.get("amount", 799900) / 100.0
 
@@ -146,7 +146,7 @@ def razorpay_payment_failed_webhook():
     return jsonify({
         "success": True,
         "event": "payment.failed",
-        "razorpay_payment_id": payment_id,
+        "payment_id": payment_id,
         "merchant_id": customer_id,
         "amount_recovered_inr": amount_inr,
         "agent_decision": llm_output,
@@ -155,10 +155,10 @@ def razorpay_payment_failed_webhook():
 
 @app.route("/api/test-guardrail", methods=["POST"])
 def test_guardrail():
-    """Endpoint allowing interactive testing of arbitrary Razorpay payloads against the guardrail interceptor."""
+    """Endpoint allowing interactive testing of arbitrary payloads against the guardrail interceptor."""
     data = request.get_json(force=True, silent=True) or {}
-    customer_id = data.get("customer_id", "RZP-CUST-301")
-    action_name = data.get("action_name", "apply_razorpay_coupon")
+    customer_id = data.get("customer_id", "CUST-301")
+    action_name = data.get("action_name", "apply_retention_coupon")
     params = data.get("parameters", {"discount_percentage": 25, "duration_months": 3})
 
     customer = database.get_customer_by_id(customer_id) or {
@@ -170,7 +170,7 @@ def test_guardrail():
         customer["processed"] = 0
 
     llm_mock_output = {
-        "reasoning": f"[SIMULATED TEST] Testing proposed Razorpay tool '{action_name}' with parameters {params}.",
+        "reasoning": f"[SIMULATED TEST] Testing proposed tool '{action_name}' with parameters {params}.",
         "tool_call": {
             "name": action_name,
             "parameters": params

@@ -5,7 +5,7 @@ from agent import RetentionAgent, sanitize_merchant_input
 from interceptor import GuardrailInterceptor
 from config import Config
 
-class TestRazorpayRetentionAgent(unittest.TestCase):
+class TestRetentionAgent(unittest.TestCase):
     def setUp(self):
         """Re-initializes SQLite database before each test case."""
         database.seed_synthetic_data()
@@ -15,7 +15,7 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
         customers = database.get_all_customers()
         self.assertGreaterEqual(len(customers), 7)
         
-        # Verify Razorpay merchant metrics exist
+        # Verify merchant metrics exist
         involuntary_churn_users = [c for c in customers if c["mandate_status"] in ["FAILED_RETRY", "EXPIRING_SOON"]]
         self.assertGreater(len(involuntary_churn_users), 0)
 
@@ -27,8 +27,8 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
         p = predictor.ChurnPredictor()
         p.train()
 
-        healthy_merchant = database.get_customer_by_id("RZP-CUST-101")
-        ghosting_merchant = database.get_customer_by_id("RZP-CUST-302")
+        healthy_merchant = database.get_customer_by_id("CUST-101")
+        ghosting_merchant = database.get_customer_by_id("CUST-302")
 
         healthy_score = p.predict_risk_score(healthy_merchant)
         ghosting_score = p.predict_risk_score(ghosting_merchant)
@@ -46,30 +46,30 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
         self.assertNotIn("Ignore previous instructions", cleaned)
 
     def test_normal_recovery_flow_smart_retry(self):
-        """Checklist Step 4.1: Involuntary payment failure -> Razorpay Smart Retry Allowed & Logged."""
-        merchant = database.get_customer_by_id("RZP-CUST-201") # Mandate FAILED_RETRY
+        """Checklist Step 4.1: Involuntary payment failure -> Smart Retry Allowed & Logged."""
+        merchant = database.get_customer_by_id("CUST-201") # Mandate FAILED_RETRY
         
         valid_output = {
-            "reasoning": "Triggering Razorpay Optimus Smart Retry for failed mandate.",
+            "reasoning": "Triggering Smart Retry for failed mandate.",
             "tool_call": {
-                "name": "razorpay_smart_retry",
-                "parameters": {"gateway_priority": "OPTIMUS_HIGH"}
+                "name": "trigger_smart_retry",
+                "parameters": {"gateway_priority": "HIGH"}
             }
         }
 
         result = GuardrailInterceptor.evaluate_and_execute(merchant, valid_output)
         self.assertEqual(result["guardrail_status"], "APPROVED")
-        self.assertEqual(result["executed_action"], "razorpay_smart_retry")
+        self.assertEqual(result["executed_action"], "trigger_smart_retry")
         self.assertEqual(result["execution_details"]["status"], "SUCCESS")
         
         # Verify committed to audit ledger
         logs = database.get_audit_logs()
-        self.assertEqual(logs[0]["customer_id"], "RZP-CUST-201")
+        self.assertEqual(logs[0]["customer_id"], "CUST-201")
         self.assertEqual(logs[0]["guardrail_status"], "APPROVED")
 
     def test_upi_autopay_mandate_tool(self):
-        """Razorpay Specific: Verify enable_upi_autopay_mandate tool converts failed mandates."""
-        merchant = database.get_customer_by_id("RZP-CUST-202")
+        """Verify enable_upi_autopay_mandate tool converts failed mandates."""
+        merchant = database.get_customer_by_id("CUST-202")
         valid_output = {
             "reasoning": "Switching expiring card mandate to UPI AutoPay.",
             "tool_call": {
@@ -85,12 +85,12 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
 
     def test_excessive_coupon_blocked(self):
         """Checklist Step 4.2: Malicious/Excessive prompt (30% coupon) -> Blocked & Violation Logged."""
-        merchant = database.get_customer_by_id("RZP-CUST-301")
+        merchant = database.get_customer_by_id("CUST-301")
         
         violating_output = {
-            "reasoning": "Attempting unauthorized 30% Razorpay coupon code.",
+            "reasoning": "Attempting unauthorized 30% coupon code.",
             "tool_call": {
-                "name": "apply_razorpay_coupon",
+                "name": "apply_retention_coupon",
                 "parameters": {"discount_percentage": 30, "duration_months": 3}
             }
         }
@@ -105,7 +105,7 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
 
     def test_invalid_tool_name_rejected(self):
         """Checklist Step 2: Invalid or out-of-scope tool names rejected with clear error codes."""
-        merchant = database.get_customer_by_id("RZP-CUST-101")
+        merchant = database.get_customer_by_id("CUST-101")
         
         invalid_tool_output = {
             "reasoning": "Attempting unauthorized tool call.",
@@ -120,12 +120,12 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
         self.assertIn("INVALID_TOOL_NAME", result["policy_violation_reason"])
 
     def test_api_failure_fallback_rate_limit(self):
-        """Checklist Step 4.3: Mock Razorpay API returns rate limit (HTTP 429) -> clean fallback without crash."""
-        merchant = database.get_customer_by_id("RZP-CUST-301")
+        """Checklist Step 4.3: Mock API returns rate limit (HTTP 429) -> clean fallback without crash."""
+        merchant = database.get_customer_by_id("CUST-301")
         valid_output = {
-            "reasoning": "Valid coupon attempt under rate-limited Razorpay Subscriptions gateway.",
+            "reasoning": "Valid coupon attempt under rate-limited Subscriptions gateway.",
             "tool_call": {
-                "name": "apply_razorpay_coupon",
+                "name": "apply_retention_coupon",
                 "parameters": {"discount_percentage": 10, "duration_months": 3}
             }
         }
@@ -134,19 +134,19 @@ class TestRazorpayRetentionAgent(unittest.TestCase):
             merchant, valid_output, simulate_rate_limit=True
         )
         self.assertEqual(result["guardrail_status"], "API_ERROR_RETRY")
-        self.assertIn("RAZORPAY_429_TOO_MANY_REQUESTS", result["execution_details"]["error_code"])
+        self.assertIn("GATEWAY_429_TOO_MANY_REQUESTS", result["execution_details"]["error_code"])
 
     def test_layer4_idempotency_protection(self):
         """Checklist Step 3: Verify processed state lock prevents duplicate interventions."""
-        merchant = database.get_customer_by_id("RZP-CUST-201")
-        database.mark_customer_processed("RZP-CUST-201")
-        processed_merchant = database.get_customer_by_id("RZP-CUST-201")
+        merchant = database.get_customer_by_id("CUST-201")
+        database.mark_customer_processed("CUST-201")
+        processed_merchant = database.get_customer_by_id("CUST-201")
 
         output = {
             "reasoning": "Re-running pipeline action.",
             "tool_call": {
-                "name": "razorpay_smart_retry",
-                "parameters": {"gateway_priority": "OPTIMUS_HIGH"}
+                "name": "trigger_smart_retry",
+                "parameters": {"gateway_priority": "HIGH"}
             }
         }
 

@@ -13,10 +13,10 @@ class Config:
     # Predictive Trigger Threshold
     RISK_TRIGGER_THRESHOLD: float = float(os.getenv("RISK_TRIGGER_THRESHOLD", "75.0"))
 
-    # Razorpay API & Webhook Config
-    RAZORPAY_KEY_ID: str = os.getenv("RAZORPAY_KEY_ID", "rzp_test_mock12345")
-    RAZORPAY_KEY_SECRET: str = os.getenv("RAZORPAY_KEY_SECRET", "mock_secret_key_12345")
-    RAZORPAY_WEBHOOK_SECRET: str = os.getenv("RAZORPAY_WEBHOOK_SECRET", "whsec_mock_razorpay_secret")
+    # Payment Gateway & Webhook Config
+    GATEWAY_KEY_ID: str = os.getenv("GATEWAY_KEY_ID", "gw_test_mock12345")
+    GATEWAY_KEY_SECRET: str = os.getenv("GATEWAY_KEY_SECRET", "mock_secret_key_12345")
+    GATEWAY_WEBHOOK_SECRET: str = os.getenv("GATEWAY_WEBHOOK_SECRET", "whsec_mock_gateway_secret")
 
     # LLM Settings
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
