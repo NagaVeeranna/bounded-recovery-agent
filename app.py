@@ -3,7 +3,8 @@ from flask_cors import CORS
 import database
 import predictor
 from agent import RetentionAgent
-from interceptor import GuardrailInterceptor, MAX_DISCOUNT_PERCENTAGE, MAX_TRIAL_EXTENSION_DAYS, MAX_PAUSE_DURATION_MONTHS
+from interceptor import GuardrailInterceptor
+from config import Config
 from runner import run_autonomous_pipeline
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -33,14 +34,14 @@ def get_metrics():
     logs = database.get_audit_logs()
 
     total_customers = len(customers)
-    at_risk_count = sum(1 for c in customers if c.get("risk_score", 0) >= predictor.RISK_TRIGGER_THRESHOLD)
+    at_risk_count = sum(1 for c in customers if c.get("risk_score", 0) >= Config.RISK_TRIGGER_THRESHOLD)
     processed_count = sum(1 for c in customers if c.get("processed") == 1)
 
     approved_count = sum(1 for l in logs if l["guardrail_status"] == "APPROVED")
     blocked_count = sum(1 for l in logs if l["guardrail_status"] == "BLOCKED")
     remediated_count = sum(1 for l in logs if l["guardrail_status"] == "AUTO_REMEDIATED")
 
-    total_gmv_at_risk_inr = sum(c["mrr"] for c in customers if c.get("risk_score", 0) >= predictor.RISK_TRIGGER_THRESHOLD)
+    total_gmv_at_risk_inr = sum(c["mrr"] for c in customers if c.get("risk_score", 0) >= Config.RISK_TRIGGER_THRESHOLD)
 
     return jsonify({
         "success": True,
@@ -54,9 +55,9 @@ def get_metrics():
             "total_mrr_at_risk": round(total_gmv_at_risk_inr, 2),
             "currency": "INR",
             "policy_limits": {
-                "max_discount": MAX_DISCOUNT_PERCENTAGE,
-                "max_trial_days": MAX_TRIAL_EXTENSION_DAYS,
-                "max_pause_months": MAX_PAUSE_DURATION_MONTHS
+                "max_discount": Config.MAX_DISCOUNT_PERCENTAGE,
+                "max_trial_days": Config.MAX_TRIAL_EXTENSION_DAYS,
+                "max_pause_months": Config.MAX_PAUSE_DURATION_MONTHS
             }
         }
     })
@@ -92,7 +93,7 @@ def process_customer(customer_id):
     p.train()
     risk_score = p.predict_risk_score(customer)
     customer["risk_score"] = risk_score
-    database.update_customer_risk(customer_id, risk_score, "AT_RISK" if risk_score >= 75 else "HEALTHY")
+    database.update_customer_risk(customer_id, risk_score, "AT_RISK" if risk_score >= Config.RISK_TRIGGER_THRESHOLD else "HEALTHY")
 
     # Reasoning Engine
     agent = RetentionAgent()
@@ -111,6 +112,44 @@ def process_customer(customer_id):
         "success": True,
         "customer": updated_customer,
         "llm_output": llm_output,
+        "interceptor_result": interceptor_result
+    })
+
+# --- RAZORPAY WEBHOOK INTEGRATION ENDPOINT ---
+@app.route("/api/webhooks/razorpay/payment-failed", methods=["POST"])
+def razorpay_payment_failed_webhook():
+    """
+    Simulates receiving a Razorpay 'payment.failed' webhook event.
+    Automatically triggers the autonomous retention agent for the target merchant.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    payload = data.get("payload", {})
+    payment_entity = payload.get("payment", {}).get("entity", {})
+
+    customer_id = payment_entity.get("customer_id", data.get("customer_id", "RZP-CUST-201"))
+    payment_id = payment_entity.get("id", "pay_mock_webhook_999")
+    amount_inr = payment_entity.get("amount", 799900) / 100.0
+
+    customer = database.get_customer_by_id(customer_id)
+    if not customer:
+        return jsonify({
+            "success": False,
+            "event": "payment.failed",
+            "message": f"Webhook received for unknown merchant {customer_id}."
+        }), 404
+
+    # Trigger recovery agent
+    agent = RetentionAgent()
+    llm_output = agent.generate_strategy(customer)
+    interceptor_result = GuardrailInterceptor.evaluate_and_execute(customer, llm_output)
+
+    return jsonify({
+        "success": True,
+        "event": "payment.failed",
+        "razorpay_payment_id": payment_id,
+        "merchant_id": customer_id,
+        "amount_recovered_inr": amount_inr,
+        "agent_decision": llm_output,
         "interceptor_result": interceptor_result
     })
 

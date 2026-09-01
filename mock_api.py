@@ -4,7 +4,8 @@ import uuid
 class MockRazorpayAPI:
     """
     Simulates Razorpay Payment Gateway & Subscriptions API endpoints:
-    - Smart Retry engine (Optimus)
+    - Smart Retry engine (Optimus with exponential backoff)
+    - UPI AutoPay Mandate Creation
     - Instant Recovery Payment Links (Razorpay Links)
     - Coupon Application (Razorpay Subscriptions)
     - WhatsApp / SMS Payment Dunning Reminders
@@ -18,7 +19,28 @@ class MockRazorpayAPI:
             "action": "RAZORPAY_SMART_RETRY",
             "razorpay_payment_id": payment_id,
             "gateway_priority": gateway_priority,
-            "message": f"Triggered Razorpay Optimus Smart Retry for account {customer_id}. Payment ID: {payment_id}."
+            "retry_schedule": "Exponential Backoff (T+1h, T+6h, T+24h)",
+            "message": f"Triggered Razorpay Optimus Smart Retry for merchant {customer_id}. Payment ID: {payment_id}."
+        }
+
+    @staticmethod
+    def enable_upi_autopay_mandate(customer_id, vpa_handle=None):
+        vpa_handle = vpa_handle or f"{customer_id.lower()}@upi"
+        mandate_id = f"umn_{uuid.uuid4().hex[:10]}"
+        
+        # Update mandate status in database
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE customers SET mandate_status = 'ACTIVE' WHERE id = ?", (customer_id,))
+        conn.commit()
+        conn.close()
+
+        return {
+            "status": "SUCCESS",
+            "action": "UPI_AUTOPAY_ENABLED",
+            "mandate_id": mandate_id,
+            "vpa_handle": vpa_handle,
+            "message": f"Successfully enabled Razorpay UPI AutoPay Mandate ({mandate_id}) for merchant {customer_id} via VPA {vpa_handle}."
         }
 
     @staticmethod

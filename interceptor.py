@@ -1,14 +1,10 @@
 import database
 from mock_api import MockRazorpayAPI
-
-# --- HARDCODED COMPANY FINANCIAL & OPERATIONAL POLICIES ---
-MAX_DISCOUNT_PERCENTAGE = 15.0       # Strict Razorpay retention coupon cap (15%)
-MAX_TRIAL_EXTENSION_DAYS = 14        # Max trial extension allowed
-MAX_PAUSE_DURATION_MONTHS = 3        # Max subscription pause allowed
-LTV_MAX_INTERVENTION_RATIO = 0.50   # Max cost allowed is 50% of 6-month LTV
+from config import Config
 
 VALID_TOOL_NAMES = {
     "razorpay_smart_retry",
+    "enable_upi_autopay_mandate",
     "create_razorpay_payment_link",
     "send_whatsapp_payment_reminder",
     "apply_razorpay_coupon",
@@ -21,6 +17,7 @@ class GuardrailInterceptor:
     """
     Evaluates raw LLM proposed retention actions against deterministic company policies
     BEFORE allowing interaction with Razorpay billing APIs or databases.
+    Enforces Config constants for discount caps, trial limits, and LTV boundaries.
     """
     @staticmethod
     def evaluate_and_execute(customer, llm_output, auto_remediate_violators=False, simulate_api_error=False, simulate_rate_limit=False):
@@ -55,7 +52,7 @@ class GuardrailInterceptor:
 
         # --- GUARDRAIL CHECK 2: IDEMPOTENCY SAFETY ---
         if customer.get("processed") == 1:
-            violation_msg = "IDEMPOTENCY_VIOLATION: Customer account has already been processed in a prior pipeline run. Action blocked to prevent duplicate interventions."
+            violation_msg = "IDEMPOTENCY_VIOLATION: Merchant account has already been processed in a prior pipeline run. Action blocked to prevent duplicate interventions."
             database.log_audit_entry(
                 customer_id=customer_id,
                 ml_risk_score=ml_risk_score,
@@ -79,9 +76,9 @@ class GuardrailInterceptor:
         # --- GUARDRAIL CHECK 3: COUPON / DISCOUNT PERCENTAGE CAP ---
         if action_name in ["apply_razorpay_coupon", "offer_discount"]:
             pct = params.get("discount_percentage", params.get("percentage", 0))
-            if pct > MAX_DISCOUNT_PERCENTAGE:
+            if pct > Config.MAX_DISCOUNT_PERCENTAGE:
                 policy_violations.append(
-                    f"MAX_DISCOUNT_EXCEEDED: Proposed discount of {pct}% exceeds maximum authorized limit of {MAX_DISCOUNT_PERCENTAGE}%."
+                    f"MAX_DISCOUNT_EXCEEDED: Proposed discount of {pct}% exceeds maximum authorized limit of {Config.MAX_DISCOUNT_PERCENTAGE}%."
                 )
 
             # --- GUARDRAIL CHECK 4: DOUBLE-DISCOUNT / COUPON POLICY ---
@@ -95,7 +92,7 @@ class GuardrailInterceptor:
             monthly_mrr = customer.get("mrr", 0)
             total_discount_cost = monthly_mrr * (pct / 100.0) * duration
             ltv_6mo = monthly_mrr * 6
-            max_allowed_cost = ltv_6mo * LTV_MAX_INTERVENTION_RATIO
+            max_allowed_cost = ltv_6mo * Config.LTV_MAX_INTERVENTION_RATIO
 
             if total_discount_cost > max_allowed_cost:
                 policy_violations.append(
@@ -105,17 +102,17 @@ class GuardrailInterceptor:
         # --- GUARDRAIL CHECK 6: TRIAL EXTENSION LIMIT ---
         elif action_name == "extend_trial":
             days = params.get("days", 0)
-            if days > MAX_TRIAL_EXTENSION_DAYS:
+            if days > Config.MAX_TRIAL_EXTENSION_DAYS:
                 policy_violations.append(
-                    f"MAX_TRIAL_EXCEEDED: Proposed trial extension of {days} days exceeds maximum authorized limit of {MAX_TRIAL_EXTENSION_DAYS} days."
+                    f"MAX_TRIAL_EXCEEDED: Proposed trial extension of {days} days exceeds maximum authorized limit of {Config.MAX_TRIAL_EXTENSION_DAYS} days."
                 )
 
         # --- GUARDRAIL CHECK 7: SUBSCRIPTION PAUSE LIMIT ---
         elif action_name == "pause_subscription":
             duration = params.get("duration_months", 0)
-            if duration > MAX_PAUSE_DURATION_MONTHS:
+            if duration > Config.MAX_PAUSE_DURATION_MONTHS:
                 policy_violations.append(
-                    f"MAX_PAUSE_EXCEEDED: Proposed pause duration of {duration} months exceeds maximum limit of {MAX_PAUSE_DURATION_MONTHS} months."
+                    f"MAX_PAUSE_EXCEEDED: Proposed pause duration of {duration} months exceeds maximum limit of {Config.MAX_PAUSE_DURATION_MONTHS} months."
                 )
 
         # --- VERDICT EVALUATION ---
@@ -171,14 +168,14 @@ class GuardrailInterceptor:
             if auto_remediate_violators and action_name in ["apply_razorpay_coupon", "offer_discount"] and customer.get("has_discount") == 0:
                 remediated_params = dict(params)
                 if "discount_percentage" in remediated_params:
-                    remediated_params["discount_percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
+                    remediated_params["discount_percentage"] = int(Config.MAX_DISCOUNT_PERCENTAGE)
                 if "percentage" in remediated_params:
-                    remediated_params["percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
+                    remediated_params["percentage"] = int(Config.MAX_DISCOUNT_PERCENTAGE)
                 
                 exec_result = GuardrailInterceptor._dispatch_action(customer_id, action_name, remediated_params)
                 database.mark_customer_processed(customer_id, new_status="RETAINED_REMEDIATED")
                 
-                remediate_note = f"AUTO_REMEDIATED: Capped coupon/discount to {MAX_DISCOUNT_PERCENTAGE}%. Original violations: {violation_summary}"
+                remediate_note = f"AUTO_REMEDIATED: Capped coupon/discount to {Config.MAX_DISCOUNT_PERCENTAGE}%. Original violations: {violation_summary}"
                 database.log_audit_entry(
                     customer_id=customer_id,
                     ml_risk_score=ml_risk_score,
@@ -221,6 +218,8 @@ class GuardrailInterceptor:
         """Dispatches approved tool call to MockRazorpayAPI."""
         if action_name == "razorpay_smart_retry":
             return MockRazorpayAPI.razorpay_smart_retry(customer_id, params.get("gateway_priority", "OPTIMUS_HIGH"))
+        elif action_name == "enable_upi_autopay_mandate":
+            return MockRazorpayAPI.enable_upi_autopay_mandate(customer_id, params.get("vpa_handle"))
         elif action_name == "create_razorpay_payment_link":
             return MockRazorpayAPI.create_razorpay_payment_link(customer_id, params.get("amount_inr", 1000), params.get("expires_in_hours", 24))
         elif action_name in ["apply_razorpay_coupon", "offer_discount"]:

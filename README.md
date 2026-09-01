@@ -1,12 +1,15 @@
-# 🛡️ Retention Sentinel — Autonomous Fintech Retention Agent
+# 🛡️ Razorpay Churn Sentinel — Bounded Autonomous Retention Agent
+### *Enterprise Submission for the Razorpay AI Agent Challenge*
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: Flask](https://img.shields.io/badge/Framework-Flask-green.svg)](https://flask.palletsprojects.com/)
 [![ML: Scikit-Learn](https://img.shields.io/badge/ML-Scikit--Learn-orange.svg)](https://scikit-learn.org/)
-[![Tests: PyTest](https://img.shields.io/badge/Tests-PyTest%207%2F7%20Passed-brightgreen.svg)](https://docs.pytest.org/)
+[![Validation: Pydantic](https://img.shields.io/badge/Validation-Pydantic%20v2-red.svg)](https://docs.pydantic.dev/)
+[![Tests: PyTest](https://img.shields.io/badge/Tests-PyTest%209%2F9%20Passed-brightgreen.svg)](https://docs.pytest.org/)
+[![CI/CD: GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue.svg)](https://github.com/features/actions)
 
-An enterprise-grade autonomous retention agent designed for SaaS and Fintech platforms. The system strictly isolates **predictive intelligence** (ML churn classifier) from **agentic action** (LLM retention strategy generation), governed by **deterministic, code-level financial guardrails** and an immutable audit ledger.
+An enterprise-grade autonomous churn recovery agent designed for **Razorpay Subscriptions & Payment Gateways**. The system strictly isolates **predictive intelligence** (ML churn classifier) from **agentic action** (LLM dunning strategies), governed by **deterministic, code-level financial guardrails**, **Pydantic schema validation**, **prompt injection defense**, and an immutable audit ledger.
 
 ---
 
@@ -15,32 +18,54 @@ An enterprise-grade autonomous retention agent designed for SaaS and Fintech pla
 ```text
 +-----------------------------------------------------------------------------------+
 | 1. STORAGE & AUDIT LAYER (SQLite Database: fintech_agent.db)                     |
-|    - Customers Table: Behavioral metrics, LTV, Idempotency status (processed=1)   |
+|    - Customers Table: Merchant metrics, GMV, Mandate status, Idempotency (processed=1)|
 |    - Audit_Log Table: Immutable ledger of risk scores, prompts, and policy checks  |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------------+
 | 2. PREDICTIVE ENGINE (Scikit-Learn ML Classifier)                                 |
-|    - Evaluates: days_since_active, failed_payment_count, usage_drop_pct, etc.      |
+|    - Evaluates: payment_failure_rate, days_since_last_transaction, GMV, etc.      |
 |    - Output: Risk Score (0-100%). Triggers Agent ONLY if Risk Score >= 75%.         |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------------+
-| 3. REASONING ENGINE (LLM Tool Calling & Structured Schema Engine)                 |
-|    - Generates retention strategy tool call (offer_discount, extend_trial, etc.)  |
-|    - Persona: Retention Sentinel (maximize ARR retention, minimize leakage)       |
+| 3. REASONING ENGINE (LLM Tool Calling + Prompt Sanitizer + Pydantic Schema)       |
+|    - Generates Razorpay tool calls (razorpay_smart_retry, enable_upi_autopay, etc.) |
+|    - Persona: Razorpay Sentinel (maximize GMV retention, minimize leakage)        |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------------+
 | 4. EXECUTION & SAFETY INTERCEPTOR (Deterministic Financial Guardrails)            |
-|    - Policy Rules: Max discount <=15%, Max trial <=14d, Idempotency lock, No stack|
+|    - Policy Rules: Max coupon <=15%, Max trial <=14d, Idempotency lock, LTV cap   |
 |    - Outcome: APPROVED, BLOCKED (Policy Violation), or AUTO-REMEDIATED            |
-|    - Ledger: Updates database & dispatches Mock Billing API calls                 |
+|    - Ledger: Updates database & dispatches MockRazorpayAPI calls                  |
 +-----------------------------------------------------------------------------------+
 ```
+
+---
+
+## 🧠 LLM-Specific Principles (Trust & Safety Architecture)
+
+- **Separation of Reasoning and Action**: The LLM generates a structured tool recommendation, but **never executes it directly**. The Interceptor validates and enforces hard financial policies before any gateway mutation occurs.
+- **Prompt-Injection Defense**: Pre-processor sanitizer (`sanitize_merchant_input`) strips suspicious injection tokens, system override attempts, and HTML tags from merchant inputs before injecting into system prompts.
+- **Pydantic Schema Validation**: Second-pass Pydantic validator (`ReasoningPayload`) guarantees 100% JSON schema conformity. Invalid LLM outputs fall back safely without crashing.
+- **Few-Shot Prompt Engineering**: Includes explicit few-shot examples in the system prompt for consistent tool selection across involuntary vs voluntary churn scenarios.
+- **Deterministic Guardrails Over LLM Outputs**: Financial limits ($\le 15\%$ coupon, double-coupon block, LTV caps) are hardcoded in `config.py` and `interceptor.py`, not left to probabilistic LLM prompts.
+- **Full Audit Ledger**: Immutable append-only `Audit_Log` commits every prompt, raw LLM reasoning, risk score, and interceptor verdict for post-hoc compliance and explainability.
+- **Idempotency & Retry Resilience**: Database state lock (`processed = 1`) prevents double-firing actions; automatic retry handling (`API_ERROR_RETRY`) handles HTTP 429/500 gateway errors.
+
+---
+
+## 🛠️ Software Engineering Principles (Production-Ready Code)
+
+- **Modular, Layered Architecture**: `config.py`, `database.py`, `predictor.py`, `agent.py`, `interceptor.py`, `mock_api.py`, `runner.py`, `app.py`. Each module has a single responsibility.
+- **Centralized Configuration Management**: Config parameters (`MAX_DISCOUNT_PERCENTAGE`, `RISK_TRIGGER_THRESHOLD`, secrets) managed cleanly in `config.py`.
+- **Test-Driven Verification**: 9/9 PyTest tests covering normal flows, prompt injection defense, UPI AutoPay, rate limits, invalid tools, and idempotency.
+- **Razorpay Webhooks Integration**: Endpoint `POST /api/webhooks/razorpay/payment-failed` simulates receiving Razorpay `payment.failed` webhook events to trigger instant recovery.
+- **CI/CD Automation**: GitHub Actions workflow (`.github/workflows/test.yml`) automatically executes test suites on every commit.
 
 ---
 
@@ -48,30 +73,15 @@ An enterprise-grade autonomous retention agent designed for SaaS and Fintech pla
 
 | Component | Target Responsibility | Key Implementation & Validation Points |
 | :--- | :--- | :--- |
-| [`predictor.py`](file:///d:/Recovery%20-Agent/predictor.py) | **Tabular ML Risk Engine** | Trains Random Forest classifier on synthetic behavioral data. Predicts churn risk scores (0–100%). Filters and triggers ONLY accounts $\ge 75\%$ risk score. |
-| [`agent.py`](file:///d:/Recovery%20-Agent/agent.py) | **Reasoning Brain** | Formulates customer context and queries LLM / structured schema engine to return JSON tool-call payloads (`offer_discount`, `extend_trial`, `pause_subscription`, etc.). |
-| [`interceptor.py`](file:///d:/Recovery%20-Agent/interceptor.py) | **Safety & Bounded Logic** | Intercepts agent actions before execution; enforces policy cap ($\le 15\%$), blocks stacked discounts, checks 6-month LTV ratio cap ($50\%$), and rejects invalid tool names with `INVALID_TOOL_NAME`. |
-| [`mock_api.py`](file:///d:/Recovery%20-Agent/mock_api.py) | **Tool Implementations** | Emulates Stripe/payment gateway mutations (discount applications, trial extensions, subscription pauses) with rate-limit (`HTTP 429`) & 500 error retries. |
-| [`database.py`](file:///d:/Recovery%20-Agent/database.py) | **Immutable Audit Ledger** | SQLite database with append-only `Audit_Log` ledger recording customer metrics, raw reasoning prompts, policy verdicts (`APPROVED`, `BLOCKED`, `AUTO_REMEDIATED`), and `processed = 1` state locks. |
-| [`runner.py`](file:///d:/Recovery%20-Agent/runner.py) | **Pipeline Orchestration** | Batch execution runner iterating over customer profiles: `Predictor` $\rightarrow$ `Agent` $\rightarrow$ `Interceptor` $\rightarrow$ `Mock API` $\rightarrow$ `Database Audit Ledger`. |
-| [`app.py`](file:///d:/Recovery%20-Agent/app.py) + **UI** | **Demonstration Dashboard** | Flask web app serving a Glassmorphic dashboard at **`http://127.0.0.1:5000`** displaying live risk scores, explainability audit ledger, policy testing simulator, and idempotency tests. |
-| [`test_agent.py`](file:///d:/Recovery%20-Agent/test_agent.py) | **Safety & Flow Verification** | Full PyTest suite covering normal recovery flows, rate-limit retries, excessive prompt blocks, invalid tool rejection, and idempotency protection. |
-
----
-
-## 🔒 Enterprise Safety & Verification Checklist
-
-1. **Dependency Sanity**:
-   - Lean, CPU-friendly dependencies in `requirements.txt`: `scikit-learn`, `pandas`, `numpy`, `Flask`, `flask-cors`, `requests`, `google-genai`, `pytest`.
-2. **Guardrail Enforcement in `interceptor.py`**:
-   - **Discount Cap**: Maximum allowed discount strictly bounded at **15%** (`MAX_DISCOUNT_PERCENTAGE`).
-   - **Double-Discount Guard**: Rejects discount stacking if `customer.has_discount == 1`.
-   - **Invalid Tool Protection**: Rejects unauthorized or out-of-scope tool calls with `INVALID_TOOL_NAME`.
-   - **Full Ledgering**: Every verdict (`APPROVED`, `BLOCKED`, `AUTO_REMEDIATED`, `API_ERROR_RETRY`) is committed to the append-only `Audit_Log`.
-3. **Idempotency & System Restarts in `runner.py`**:
-   - Once an account is processed, `processed = 1` is committed to the database. Re-running the batch runner or restarting the server returns `IDEMPOTENCY_VIOLATION`, preventing double-discounting or duplicate interventions.
-4. **API Failure Resilience**:
-   - Emulates Stripe gateway rate limits (`HTTP 429`) or server errors (`HTTP 500`) and falls back gracefully with retry logging (`API_ERROR_RETRY`) without crashing the pipeline.
+| [`config.py`](file:///d:/Recovery%20-Agent/config.py) | **Configuration Management** | Centralized bounds (Max discount 15%, max trial 14d, LTV ratio 50%, 75% trigger threshold). |
+| [`predictor.py`](file:///d:/Recovery%20-Agent/predictor.py) | **Razorpay ML Risk Engine** | Trains Random Forest classifier on payment failure rates, inactivity, and GMV. Outputs scores 0–100%. |
+| [`agent.py`](file:///d:/Recovery%20-Agent/agent.py) | **Reasoning Brain + Sanitizer** | Prompt injection pre-processor, Few-Shot prompting, Gemini API integration, Pydantic schema validation. |
+| [`interceptor.py`](file:///d:/Recovery%20-Agent/interceptor.py) | **Safety Interceptor** | Evaluates tool calls against hard bounds; blocks excessive coupons (>15%), double coupons, and unknown tools. |
+| [`mock_api.py`](file:///d:/Recovery%20-Agent/mock_api.py) | **Razorpay Dunning APIs** | Optimus Smart Retry, UPI AutoPay mandate setup, Payment Links, Subscriptions Coupons, WhatsApp Reminders. |
+| [`database.py`](file:///d:/Recovery%20-Agent/database.py) | **Immutable Audit Ledger** | SQLite database with append-only `Audit_Log` ledger recording all risk scores, prompts, and verdicts. |
+| [`runner.py`](file:///d:/Recovery%20-Agent/runner.py) | **Pipeline Orchestration** | Batch execution runner iterating over merchant accounts with formatted CLI logs. |
+| [`app.py`](file:///d:/Recovery%20-Agent/app.py) + **UI** | **Razorpay Dashboard & Webhooks** | Flask web app serving Glassmorphic UI at **`http://127.0.0.1:5000`** & `POST /api/webhooks/razorpay/payment-failed`. |
+| [`test_agent.py`](file:///d:/Recovery%20-Agent/test_agent.py) | **Safety Verification Suite** | 9/9 PyTest suite validating prompt injection, UPI AutoPay, webhook triggers, rate limits, and idempotency. |
 
 ---
 
@@ -79,52 +89,42 @@ An enterprise-grade autonomous retention agent designed for SaaS and Fintech pla
 
 ### 1. Prerequisites & Installation
 
-Clone the repository and install dependencies:
 ```bash
 git clone https://github.com/NagaVeeranna/bounded-recovery-agent.git
 cd bounded-recovery-agent
 pip install -r requirements.txt
 ```
 
-### 2. Run Automated PyTest Verification Suite
+### 2. Run PyTest Verification Suite
 ```bash
 pytest test_agent.py
 ```
-*Expected Output:* `7 passed in 3.79s`
+*Expected Output:* `9 passed in 4.38s`
 
 ### 3. Run Autonomous CLI Pipeline
 ```bash
 python runner.py
 ```
 
-### 4. Launch Interactive Web Dashboard
+### 4. Launch Razorpay Merchant Web Dashboard
 ```bash
 python app.py
 ```
-Open **`http://127.0.0.1:5000`** in your browser to access the interactive Glassmorphic dashboard.
+Open **`http://127.0.0.1:5000`** in your browser.
 
 ---
 
-## 🌐 Web Dashboard Features (`http://127.0.0.1:5000`)
-
-- **Predictive Risk Matrix**: Real-time view of customer churn scores, behavioral drop-off metrics, and risk status indicators.
-- **Explainability Audit Ledger**: Searchable, 100% transparent history displaying ML risk scores, raw LLM reasoning, interceptor verdicts, and execution logs.
-- **Guardrail Policy Simulator**: Interactive sandbox allowing users to test custom payloads against policy boundaries (e.g., testing 30% discount requests or unauthorized tool names).
-- **Idempotency Safety Simulator**: One-click verification proving duplicate runs on processed accounts are mathematically blocked.
-
----
-
-## 📡 REST API Reference
+## 📡 REST API & Webhook Reference
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `GET /api/customers` | `GET` | Fetches all customer profiles, behavioral metrics, and ML risk scores. |
+| `GET /api/customers` | `GET` | Fetches all merchant profiles, payment metrics, and ML risk scores. |
 | `GET /api/audit-logs` | `GET` | Returns full append-only audit ledger history. |
-| `GET /api/metrics` | `GET` | Returns system KPIs (Total MRR at risk, approved vs blocked actions, policy limits). |
-| `POST /api/seed` | `POST` | Re-seeds SQLite database with fresh synthetic customer personas. |
-| `POST /api/process-all` | `POST` | Triggers the autonomous retention pipeline across all customer accounts. |
-| `POST /api/process-customer/<id>` | `POST` | Runs the agent pipeline on a single target customer with full JSON execution trace. |
-| `POST /api/test-guardrail` | `POST` | Simulates an arbitrary tool call payload against the guardrail interceptor. |
+| `GET /api/metrics` | `GET` | Returns system KPIs (Total GMV at risk in ₹ INR, approved vs blocked actions). |
+| `POST /api/webhooks/razorpay/payment-failed` | `POST` | **Razorpay Webhook**: Simulates `payment.failed` event and triggers recovery. |
+| `POST /api/process-all` | `POST` | Triggers the autonomous retention pipeline across all merchant accounts. |
+| `POST /api/process-customer/<id>` | `POST` | Runs the agent pipeline on a single target merchant with full JSON execution trace. |
+| `POST /api/test-guardrail` | `POST` | Simulates an arbitrary Razorpay tool call payload against the guardrail interceptor. |
 
 ---
 

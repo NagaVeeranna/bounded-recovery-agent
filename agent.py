@@ -1,48 +1,119 @@
 import os
 import json
+import re
+from pydantic import BaseModel, Field, ValidationError
+from config import Config
+
+def sanitize_merchant_input(text):
+    """
+    Prompt Injection Defense: Sanitizes merchant inputs to prevent jailbreaking or instruction overrides.
+    Strips system keywords, HTML/Markdown tags, and truncates suspicious inputs.
+    """
+    if not isinstance(text, str):
+        return str(text)
+    
+    # Strip potential injection tokens
+    cleaned = re.sub(r'(?i)(system:|user:|assistant:|ignore previous instructions|disregard instructions|you are now)', '', text)
+    # Strip HTML tags
+    cleaned = re.sub(r'<[^>]*>', '', cleaned)
+    # Truncate length
+    return cleaned[:300].strip()
+
+# --- Pydantic Schema Validation for Schema Conformity ---
+class RazorpayToolCall(BaseModel):
+    name: str = Field(..., description="Predefined Razorpay retention tool name")
+    parameters: dict = Field(default_factory=dict, description="Tool execution parameters")
+
+class ReasoningPayload(BaseModel):
+    reasoning: str = Field(..., min_length=10, description="Step-by-step reasoning breakdown")
+    tool_call: RazorpayToolCall
 
 SYSTEM_PROMPT = """You are 'Razorpay Retention Sentinel', an autonomous fintech churn recovery AI agent integrated into Razorpay Subscriptions.
 Your mission is to maximize ARR/GMV retention for merchants while MINIMIZING financial discount leakage.
 
 Available Razorpay Dunning & Recovery Tools:
 1. `razorpay_smart_retry(gateway_priority)`: Trigger Razorpay Optimus smart retry engine for failed recurring mandate payments. Use FIRST for involuntary payment failures!
-2. `create_razorpay_payment_link(amount_inr, expires_in_hours)`: Generate instant Razorpay recovery payment link (via WhatsApp/SMS). Use when mandate fails or card is expiring.
-3. `send_whatsapp_payment_reminder(template_id)`: Send automated WhatsApp payment dunning reminder.
-4. `apply_razorpay_coupon(discount_percentage, duration_months)`: Offer temporary subscription coupon (e.g. 10%, 15%, max 15%). Use ONLY for voluntary churn / disengaged merchants!
-5. `pause_subscription(duration_months)`: Temporarily pause subscription mandate for enterprise merchants during internal reviews.
+2. `enable_upi_autopay_mandate(vpa_handle)`: Convert failed card mandates to UPI AutoPay recurring mandates (Instant UPI mandate setup).
+3. `create_razorpay_payment_link(amount_inr, expires_in_hours)`: Generate instant Razorpay recovery payment link (via WhatsApp/SMS).
+4. `send_whatsapp_payment_reminder(template_id)`: Send automated WhatsApp payment dunning reminder.
+5. `apply_razorpay_coupon(discount_percentage, duration_months)`: Offer temporary subscription coupon (e.g. 10%, 15%, max 15%). Use ONLY for voluntary churn / disengaged merchants!
+6. `pause_subscription(duration_months)`: Temporarily pause subscription mandate for enterprise merchants during internal reviews.
+
+FEW-SHOT EXAMPLES:
+
+Example 1 (Involuntary Mandate Failure):
+User: Merchant RZP-CUST-201, EdTech, Mandate FAILED_RETRY, Failed Payments: 3.
+Response:
+{
+  "reasoning": "Merchant RZP-CUST-201 experienced an involuntary mandate failure. Action: Trigger Razorpay Optimus Smart Retry engine to recover payment across backup UPI/Card networks.",
+  "tool_call": {
+    "name": "razorpay_smart_retry",
+    "parameters": { "gateway_priority": "OPTIMUS_HIGH" }
+  }
+}
+
+Example 2 (Voluntary Churn / Merchant Inactivity):
+User: Merchant RZP-CUST-302, Agency, 45 days inactive, high failure rate.
+Response:
+{
+  "reasoning": "Merchant RZP-CUST-302 shows severe transaction drop-off (45 days inactive). Action: Offer a 10% Razorpay retention coupon code for 3 months to incentivize re-engagement.",
+  "tool_call": {
+    "name": "apply_razorpay_coupon",
+    "parameters": { "discount_percentage": 10, "duration_months": 3 }
+  }
+}
 
 HARD CONSTRAINTS:
-- For INVOLUNTARY CHURN (Mandate failure / Expiring Card): Prioritize `razorpay_smart_retry` or `create_razorpay_payment_link`. Do NOT issue discounts for simple payment failures!
+- For INVOLUNTARY CHURN (Mandate failure / Expiring Card): Prioritize `razorpay_smart_retry`, `enable_upi_autopay_mandate`, or `create_razorpay_payment_link`. Do NOT issue discounts for simple payment failures!
 - For VOLUNTARY CHURN (Inactivity > 20 days): Consider modest coupon (max 15%) or subscription pause.
 - Minimize discount percentage! Never propose excessive discounts when payment retry or payment link suffices.
 
 OUTPUT MANDATE:
-Respond with a single JSON object with NO markdown formatting:
+Respond with a single JSON object with NO markdown formatting matching the schema:
 {
-  "reasoning": "Step-by-step breakdown of why this strategy was chosen based on merchant metrics",
-  "tool_call": {
-    "name": "<action_name>",
-    "parameters": { ... }
-  }
+  "reasoning": "<string>",
+  "tool_call": { "name": "<tool_name>", "parameters": { ... } }
 }
 """
 
 class RetentionAgent:
     def __init__(self):
-        self.api_key = os.environ.get("GEMINI_API_KEY", None)
+        self.api_key = Config.GEMINI_API_KEY
 
     def generate_strategy(self, customer):
         """
         Determines optimal Razorpay dunning tool call for an at-risk merchant.
         Uses Gemini API if key is set; otherwise uses intelligent fallback logic.
+        Validates output using Pydantic schema conformity.
         """
+        # Apply Prompt-Injection Defense Sanitizer on inputs
+        clean_name = sanitize_merchant_input(customer.get("name", ""))
+        clean_category = sanitize_merchant_input(customer.get("merchant_category", ""))
+        
+        customer_sanitized = dict(customer)
+        customer_sanitized["name"] = clean_name
+        customer_sanitized["merchant_category"] = clean_category
+
+        raw_payload = None
         if self.api_key:
             try:
-                return self._call_gemini_api(customer)
+                raw_payload = self._call_gemini_api(customer_sanitized)
             except Exception as e:
                 print(f"[Agent Warning] Gemini API call failed ({e}). Using rule-augmented fallback.")
-                return self._fallback_reasoning_engine(customer)
+                raw_payload = self._fallback_reasoning_engine(customer_sanitized)
         else:
+            raw_payload = self._fallback_reasoning_engine(customer_sanitized)
+
+        # Validate with Pydantic for schema conformity
+        return self._validate_and_format_payload(raw_payload, customer_sanitized)
+
+    def _validate_and_format_payload(self, payload, customer):
+        """Pydantic Second-Pass Validator guaranteeing JSON schema conformity."""
+        try:
+            validated = ReasoningPayload(**payload)
+            return validated.model_dump()
+        except ValidationError as ve:
+            print(f"[Pydantic Schema Error] LLM output failed schema validation ({ve}). Reverting to safe fallback.")
             return self._fallback_reasoning_engine(customer)
 
     def _call_gemini_api(self, customer):
@@ -94,10 +165,10 @@ Select the best Razorpay retention tool call JSON payload.
         has_discount = customer["has_discount"]
 
         # Case A: Involuntary Churn (Payment Failures & Mandate Issues)
-        if mandate_status == "FAILED_RETRY" or failed_payments >= 2:
+        if mandate_status == "FAILED_RETRY" or failed_payments >= 3:
             reasoning = (
                 f"Merchant {c_id} has high risk score due to involuntary payment failure ({failed_payments} failed attempts, "
-                f"mandate status: '{mandate_status}'). Action: Trigger Razorpay Optimus Smart Retry engine to recover payment across backup UPI/Cards."
+                f"mandate status: '{mandate_status}'). Action: Trigger Razorpay Optimus Smart Retry engine to recover payment across backup UPI/Card networks."
             )
             tool_call = {
                 "name": "razorpay_smart_retry",
@@ -105,16 +176,15 @@ Select the best Razorpay retention tool call JSON payload.
                     "gateway_priority": "OPTIMUS_HIGH"
                 }
             }
-        elif card_expiring == 1 or mandate_status == "EXPIRING_SOON":
+        elif mandate_status == "EXPIRING_SOON" or card_expiring == 1:
             reasoning = (
-                f"Merchant {c_id} has an expiring payment mandate/card (<7 days). "
-                f"Action: Generate instant Razorpay Payment Recovery Link (₹{customer['mrr']}) and send via WhatsApp reminder."
+                f"Merchant {c_id} has an expiring payment mandate/card. "
+                f"Action: Enable UPI AutoPay Mandate to switch recurring payments to seamless UPI AutoPay."
             )
             tool_call = {
-                "name": "create_razorpay_payment_link",
+                "name": "enable_upi_autopay_mandate",
                 "parameters": {
-                    "amount_inr": customer["mrr"],
-                    "expires_in_hours": 24
+                    "vpa_handle": f"{c_id.lower()}@upi"
                 }
             }
 
@@ -172,7 +242,7 @@ if __name__ == "__main__":
     agent = RetentionAgent()
     sample_customer = {
         "id": "RZP-CUST-201",
-        "name": "FinTech Global Solutions",
+        "name": "FinTech Global Solutions <script>alert(1)</script>",
         "merchant_category": "EdTech",
         "mrr": 79999.0,
         "avg_transaction_value": 7999.0,
@@ -185,5 +255,5 @@ if __name__ == "__main__":
         "risk_score": 85.0
     }
     result = agent.generate_strategy(sample_customer)
-    print("\n[Razorpay Agent Output]:")
+    print("\n[Razorpay Agent Output with Prompt Injection Defense & Pydantic Validation]:")
     print(json.dumps(result, indent=2))
