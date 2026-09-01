@@ -10,6 +10,7 @@ class ChurnPredictor:
         self.model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
         self.scaler = StandardScaler()
         self.is_trained = False
+        self.feature_names = ["days_since_last_transaction", "payment_failure_rate", "failed_payment_count", "card_expiring_soon", "avg_transaction_value"]
 
     def generate_training_dataset(self, num_samples=500):
         """
@@ -50,13 +51,25 @@ class ChurnPredictor:
     def train(self):
         """Trains the ML model on synthetic payment behavioral data."""
         df = self.generate_training_dataset()
-        X = df[["days_since_last_transaction", "payment_failure_rate", "failed_payment_count", "card_expiring_soon", "avg_transaction_value"]]
+        X = df[self.feature_names]
         y = df["churned"]
 
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y)
         self.is_trained = True
         print("[Predictive Engine] ML Classifier model trained successfully.")
+
+    def get_feature_importances(self):
+        """Returns relative feature importance weights from trained Random Forest classifier."""
+        if not self.is_trained:
+            self.train()
+        
+        importances = self.model.feature_importances_
+        sorted_pairs = sorted(zip(self.feature_names, importances), key=lambda x: x[1], reverse=True)
+        return [
+            {"feature": name, "importance_percentage": round(float(imp * 100), 2)}
+            for name, imp in sorted_pairs
+        ]
 
     def predict_risk_score(self, customer):
         """

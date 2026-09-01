@@ -1,5 +1,6 @@
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
+import json
 import database
 import predictor
 from agent import RetentionAgent
@@ -43,6 +44,31 @@ def get_metrics():
 
     total_gmv_at_risk_inr = sum(c["mrr"] for c in customers if c.get("risk_score", 0) >= Config.RISK_TRIGGER_THRESHOLD)
 
+    # --- REVENUE RECOVERY & FINANCIAL METRICS ---
+    revenue_recovered_inr = 0.0
+    retention_cost_inr = 0.0
+
+    for l in logs:
+        if l["guardrail_status"] in ["APPROVED", "AUTO_REMEDIATED"]:
+            # Lookup merchant MRR
+            c = database.get_customer_by_id(l["customer_id"])
+            if c:
+                monthly_mrr = c["mrr"]
+                revenue_recovered_inr += monthly_mrr * 12 # Preserved annual revenue
+                
+                # Check discount costs
+                try:
+                    params = json.loads(l["action_params"]) if isinstance(l["action_params"], str) else l["action_params"]
+                    if l["proposed_action"] in ["apply_retention_coupon", "offer_discount"]:
+                        pct = params.get("discount_percentage", params.get("percentage", 10))
+                        duration = params.get("duration_months", 3)
+                        retention_cost_inr += monthly_mrr * duration * (pct / 100.0)
+                except Exception:
+                    pass
+
+    net_revenue_impact_inr = round(revenue_recovered_inr - retention_cost_inr, 2)
+    roi_ratio = round(net_revenue_impact_inr / max(1.0, retention_cost_inr), 1) if retention_cost_inr > 0 else 0.0
+
     return jsonify({
         "success": True,
         "metrics": {
@@ -53,6 +79,10 @@ def get_metrics():
             "blocked_count": blocked_count,
             "remediated_count": remediated_count,
             "total_mrr_at_risk": round(total_gmv_at_risk_inr, 2),
+            "revenue_recovered_arr_inr": round(revenue_recovered_inr, 2),
+            "retention_cost_inr": round(retention_cost_inr, 2),
+            "net_revenue_impact_inr": net_revenue_impact_inr,
+            "roi_ratio": roi_ratio,
             "currency": "INR",
             "policy_limits": {
                 "max_discount": Config.MAX_DISCOUNT_PERCENTAGE,
@@ -60,6 +90,19 @@ def get_metrics():
                 "max_pause_months": Config.MAX_PAUSE_DURATION_MONTHS
             }
         }
+    })
+
+@app.route("/api/ml-explainability", methods=["GET"])
+def get_ml_explainability():
+    """Returns Random Forest feature importance weights for ML Explainability Dashboard."""
+    p = predictor.ChurnPredictor()
+    p.train()
+    feature_importances = p.get_feature_importances()
+    return jsonify({
+        "success": True,
+        "model_name": "RandomForestClassifier",
+        "n_estimators": 50,
+        "feature_importances": feature_importances
     })
 
 @app.route("/api/seed", methods=["POST"])

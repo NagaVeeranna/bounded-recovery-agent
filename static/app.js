@@ -14,10 +14,11 @@ function switchTab(tabId) {
 
     if (tabId === 'audit') loadAuditLogs();
     if (tabId === 'matrix') loadCustomers();
+    if (tabId === 'explainability') loadMLExplainability();
 }
 
 async function loadDashboardData() {
-    await Promise.all([loadMetrics(), loadCustomers(), loadAuditLogs()]);
+    await Promise.all([loadMetrics(), loadCustomers(), loadAuditLogs(), loadMLExplainability()]);
 }
 
 async function loadMetrics() {
@@ -28,12 +29,70 @@ async function loadMetrics() {
             const m = data.metrics;
             document.getElementById("metric-total-customers").innerText = m.total_customers;
             document.getElementById("metric-at-risk-count").innerText = m.at_risk_count;
-            document.getElementById("metric-mrr-at-risk").innerText = `₹${m.total_mrr_at_risk.toLocaleString('en-IN')}`;
             document.getElementById("metric-approved-count").innerText = m.approved_count;
             document.getElementById("metric-blocked-count").innerText = m.blocked_count;
+
+            const netARR = m.net_revenue_impact_inr || 0;
+            document.getElementById("metric-net-arr").innerText = `₹${netARR.toLocaleString('en-IN')}`;
+            document.getElementById("metric-roi-subtext").innerText = `Cost: ₹${m.retention_cost_inr.toLocaleString('en-IN')} | ROI: ${m.roi_ratio}x`;
         }
     } catch (err) {
         console.error("Failed to load metrics", err);
+    }
+}
+
+async function loadMLExplainability() {
+    const container = document.getElementById("ml-explainability-container");
+    if (!container) return;
+
+    try {
+        const res = await fetch("/api/ml-explainability");
+        const data = await res.json();
+        if (data.success) {
+            let html = `
+                <div style="margin-bottom: 15px;">
+                    <strong>Model:</strong> <code>${data.model_name}</code> (n_estimators=${data.n_estimators})
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+            `;
+
+            data.feature_importances.forEach(f => {
+                const featureCleanName = f.feature.replace(/_/g, ' ').toUpperCase();
+                html += `
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                            <span><strong>${featureCleanName}</strong></span>
+                            <span class="text-emerald">${f.importance_percentage}% importance</span>
+                        </div>
+                        <div class="progress-bar-bg" style="height: 10px;">
+                            <div class="progress-bar-fill high" style="width: ${f.importance_percentage}%;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+    } catch (err) {
+        console.error("Failed to load ML explainability", err);
+    }
+}
+
+async function simulateWebhookEvent() {
+    try {
+        const res = await fetch("/api/webhooks/payment-failed", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ customer_id: "CUST-201" })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Simulated Webhook Event (payment.failed) received for merchant ${data.merchant_id}!\n\nAgent Action: ${data.agent_decision.tool_call.name}\nInterceptor Verdict: ${data.interceptor_result.guardrail_status}`);
+            loadDashboardData();
+        }
+    } catch (err) {
+        alert("Webhook simulation error: " + err);
     }
 }
 

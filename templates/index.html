@@ -31,6 +31,9 @@
                 <a href="#matrix" class="nav-item active" onclick="switchTab('matrix')">
                     <i class="fa-solid fa-chart-line"></i> Merchant Risk Matrix
                 </a>
+                <a href="#explainability" class="nav-item" onclick="switchTab('explainability')">
+                    <i class="fa-solid fa-brain"></i> ML Feature Importance
+                </a>
                 <a href="#audit" class="nav-item" onclick="switchTab('audit')">
                     <i class="fa-solid fa-receipt"></i> Explainability Ledger
                 </a>
@@ -38,7 +41,7 @@
                     <i class="fa-solid fa-sliders"></i> Dunning Policy Simulator
                 </a>
                 <a href="#idempotency" class="nav-item" onclick="switchTab('idempotency')">
-                    <i class="fa-solid fa-arrows-rotate"></i> Idempotency Verification
+                    <i class="fa-solid fa-arrows-rotate"></i> Idempotency Lock
                 </a>
             </nav>
 
@@ -62,6 +65,9 @@
                     <p>Separating Churn Predictive Intelligence from Agentic Dunning under Strict Financial Guardrails</p>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="simulateWebhookEvent()">
+                        <i class="fa-solid fa-webhook"></i> Trigger Webhook (Payment Failed)
+                    </button>
                     <button class="btn btn-secondary" onclick="seedDatabase()">
                         <i class="fa-solid fa-database"></i> Seed Merchant Data
                     </button>
@@ -71,7 +77,7 @@
                 </div>
             </header>
 
-            <!-- Metric Cards Overview -->
+            <!-- Revenue-Focused Metrics Cards Overview -->
             <section class="metrics-grid">
                 <div class="metric-card glass">
                     <div class="metric-header">
@@ -93,11 +99,11 @@
 
                 <div class="metric-card glass">
                     <div class="metric-header">
-                        <span class="metric-label">Monthly GMV at Risk</span>
+                        <span class="metric-label">Net ARR Preserved</span>
                         <i class="fa-solid fa-indian-rupee-sign icon-emerald"></i>
                     </div>
-                    <div class="metric-value text-emerald" id="metric-mrr-at-risk">--</div>
-                    <div class="metric-subtext">Recurring Subscription Revenue</div>
+                    <div class="metric-value text-emerald" id="metric-net-arr">--</div>
+                    <div class="metric-subtext" id="metric-roi-subtext">Recovered Revenue vs Cost</div>
                 </div>
 
                 <div class="metric-card glass">
@@ -147,7 +153,25 @@
                 </div>
             </section>
 
-            <!-- TAB 2: EXPLAINABILITY AUDIT LEDGER -->
+            <!-- TAB 2: ML FEATURE IMPORTANCE EXPLAINABILITY -->
+            <section id="tab-explainability" class="tab-content">
+                <div class="card glass">
+                    <div class="card-header">
+                        <div>
+                            <h3>ML Predictive Engine Explainability (Random Forest Feature Importance)</h3>
+                            <p class="subtitle">Demonstrates which behavioral signals drive high churn risk scores across merchant accounts</p>
+                        </div>
+                        <button class="btn btn-sm btn-outline" onclick="loadMLExplainability()">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh ML Model Features
+                        </button>
+                    </div>
+                    <div id="ml-explainability-container" class="margin-top">
+                        <p class="text-muted text-center">Loading Random Forest feature importances...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: EXPLAINABILITY AUDIT LEDGER -->
             <section id="tab-audit" class="tab-content">
                 <div class="card glass">
                     <div class="card-header">
@@ -180,7 +204,7 @@
                 </div>
             </section>
 
-            <!-- TAB 3: GUARDRAIL POLICY SIMULATOR -->
+            <!-- TAB 4: GUARDRAIL POLICY SIMULATOR -->
             <section id="tab-simulator" class="tab-content">
                 <div class="grid-2">
                     <div class="card glass">
@@ -249,7 +273,7 @@
                 </div>
             </section>
 
-            <!-- TAB 4: IDEMPOTENCY VERIFICATION -->
+            <!-- TAB 5: IDEMPOTENCY VERIFICATION -->
             <section id="tab-idempotency" class="tab-content">
                 <div class="card glass">
                     <div class="card-header">
