@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retention Sentinel | Autonomous Fintech Agent</title>
+    <title>Razorpay Churn Sentinel | Bounded Autonomous Retention Agent</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,23 +19,23 @@
         <aside class="sidebar">
             <div class="brand">
                 <div class="brand-icon">
-                    <i class="fa-solid fa-shield-halved"></i>
+                    <i class="fa-solid fa-bolt"></i>
                 </div>
                 <div class="brand-text">
-                    <h2>Sentinel AI</h2>
-                    <span>Fintech Retention Agent</span>
+                    <h2>Razorpay Sentinel</h2>
+                    <span>Autonomous Churn Recovery</span>
                 </div>
             </div>
 
             <nav class="nav-menu">
                 <a href="#matrix" class="nav-item active" onclick="switchTab('matrix')">
-                    <i class="fa-solid fa-chart-line"></i> Risk Matrix & Predictor
+                    <i class="fa-solid fa-chart-line"></i> Merchant Risk Matrix
                 </a>
                 <a href="#audit" class="nav-item" onclick="switchTab('audit')">
                     <i class="fa-solid fa-receipt"></i> Explainability Ledger
                 </a>
                 <a href="#simulator" class="nav-item" onclick="switchTab('simulator')">
-                    <i class="fa-solid fa-sliders"></i> Guardrail Simulator
+                    <i class="fa-solid fa-sliders"></i> Razorpay Dunning Simulator
                 </a>
                 <a href="#idempotency" class="nav-item" onclick="switchTab('idempotency')">
                     <i class="fa-solid fa-arrows-rotate"></i> Idempotency Verification
@@ -46,8 +46,8 @@
                 <div class="system-status">
                     <span class="status-indicator online"></span>
                     <div class="status-info">
-                        <strong>Guardrails Active</strong>
-                        <small>Hard Policies Enforced</small>
+                        <strong>Razorpay Guardrails Active</strong>
+                        <small>Max 15% Coupon & Retry Caps</small>
                     </div>
                 </div>
             </div>
@@ -58,12 +58,12 @@
             <!-- Header Bar -->
             <header class="top-header">
                 <div class="header-title">
-                    <h1>Autonomous Fintech Retention Architecture</h1>
-                    <p>Separating Predictive Intelligence from Agentic Action under Strict Financial Guardrails</p>
+                    <h1>Razorpay Merchant Churn Recovery Architecture</h1>
+                    <p>Separating Churn Predictive Intelligence from Agentic Dunning under Strict Financial Guardrails</p>
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-secondary" onclick="seedDatabase()">
-                        <i class="fa-solid fa-database"></i> Seed Synthetic Data
+                        <i class="fa-solid fa-database"></i> Seed Merchant Data
                     </button>
                     <button class="btn btn-primary" onclick="runBatchPipeline()">
                         <i class="fa-solid fa-bolt"></i> Run Autonomous Batch
@@ -75,11 +75,11 @@
             <section class="metrics-grid">
                 <div class="metric-card glass">
                     <div class="metric-header">
-                        <span class="metric-label">Monitored Accounts</span>
-                        <i class="fa-solid fa-users icon-indigo"></i>
+                        <span class="metric-label">Monitored Merchants</span>
+                        <i class="fa-solid fa-store icon-indigo"></i>
                     </div>
                     <div class="metric-value" id="metric-total-customers">--</div>
-                    <div class="metric-subtext">Active subscriber database</div>
+                    <div class="metric-subtext">Active Merchant Accounts</div>
                 </div>
 
                 <div class="metric-card glass">
@@ -93,11 +93,11 @@
 
                 <div class="metric-card glass">
                     <div class="metric-header">
-                        <span class="metric-label">MRR at Risk</span>
-                        <i class="fa-solid fa-dollar-sign icon-emerald"></i>
+                        <span class="metric-label">Monthly GMV at Risk</span>
+                        <i class="fa-solid fa-indian-rupee-sign icon-emerald"></i>
                     </div>
                     <div class="metric-value text-emerald" id="metric-mrr-at-risk">--</div>
-                    <div class="metric-subtext">Monthly Recurring Revenue</div>
+                    <div class="metric-subtext">Recurring Subscription Revenue</div>
                 </div>
 
                 <div class="metric-card glass">
@@ -109,17 +109,17 @@
                         <span class="text-emerald" id="metric-approved-count">0</span> / 
                         <span class="text-rose" id="metric-blocked-count">0</span>
                     </div>
-                    <div class="metric-subtext">Hard barrier policy decisions</div>
+                    <div class="metric-subtext">Policy Interceptor Decisions</div>
                 </div>
             </section>
 
-            <!-- TAB 1: CUSTOMER RISK MATRIX -->
+            <!-- TAB 1: MERCHANT RISK MATRIX -->
             <section id="tab-matrix" class="tab-content active">
                 <div class="card glass">
                     <div class="card-header">
                         <div>
-                            <h3>Predictive Engine: Risk Matrix</h3>
-                            <p class="subtitle">ML Classifier evaluated behavioral profiles (Logins, Failed Payments, Usage Drop)</p>
+                            <h3>Predictive Engine: Merchant Churn Matrix</h3>
+                            <p class="subtitle">ML Classifier evaluated payment failure rates, days inactive, order values, and mandate statuses</p>
                         </div>
                         <button class="btn btn-sm btn-outline" onclick="trainML()">
                             <i class="fa-solid fa-brain"></i> Retrain ML Classifier
@@ -129,18 +129,18 @@
                         <table class="data-table">
                             <thead>
                                 <tr>
-                                    <th>Customer</th>
-                                    <th>Plan & MRR</th>
-                                    <th>Behavioral Risk Metrics</th>
-                                    <th>Card Expiring</th>
+                                    <th>Merchant Account</th>
+                                    <th>Category & GMV</th>
+                                    <th>Razorpay Payment Metrics</th>
+                                    <th>Mandate Status</th>
                                     <th>ML Risk Score</th>
-                                    <th>Status</th>
+                                    <th>Trigger Status</th>
                                     <th>Idempotency</th>
-                                    <th>Agentic Action</th>
+                                    <th>Agentic Recovery</th>
                                 </tr>
                             </thead>
                             <tbody id="customers-table-body">
-                                <tr><td colspan="8" class="text-center">Loading customer matrix...</td></tr>
+                                <tr><td colspan="8" class="text-center">Loading merchant matrix...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -153,7 +153,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Audit Ledger (Permanent Decision History)</h3>
-                            <p class="subtitle">100% Explainable: Trace exact Risk Score, Prompt Reasoning, Interceptor Verdict, and Execution</p>
+                            <p class="subtitle">100% Explainable: Trace exact Risk Score, Prompt Reasoning, Interceptor Verdict, and Razorpay API execution</p>
                         </div>
                         <button class="btn btn-sm btn-outline" onclick="loadAuditLogs()">
                             <i class="fa-solid fa-arrows-rotate"></i> Refresh Audit Log
@@ -164,12 +164,12 @@
                             <thead>
                                 <tr>
                                     <th>ID / Timestamp</th>
-                                    <th>Customer</th>
+                                    <th>Merchant</th>
                                     <th>ML Score</th>
                                     <th>Raw LLM Reasoning</th>
                                     <th>Proposed Action</th>
                                     <th>Guardrail Verdict</th>
-                                    <th>Policy Reason / Outcome</th>
+                                    <th>Policy Reason / Razorpay API Output</th>
                                 </tr>
                             </thead>
                             <tbody id="audit-table-body">
@@ -185,37 +185,38 @@
                 <div class="grid-2">
                     <div class="card glass">
                         <div class="card-header">
-                            <h3>Test Policy Interceptor</h3>
-                            <p class="subtitle">Simulate AI proposing policy-violating actions to verify hard barriers</p>
+                            <h3>Test Razorpay Policy Interceptor</h3>
+                            <p class="subtitle">Simulate AI proposing policy-violating actions to verify hard financial barriers</p>
                         </div>
                         <form id="simulator-form" onsubmit="runGuardrailSimulation(event)">
                             <div class="form-group">
-                                <label>Target Customer Account</label>
+                                <label>Target Merchant Account</label>
                                 <select id="sim-customer-id" class="form-control">
-                                    <option value="CUST-301">CUST-301 (Robert Sterling - Enterprise $1,200/mo)</option>
-                                    <option value="CUST-303">CUST-303 (Leo Miller - Has Active Discount!)</option>
-                                    <option value="CUST-201">CUST-201 (Elena Rostova - Card Expiring)</option>
+                                    <option value="RZP-CUST-301">RZP-CUST-301 (TechCorp India - Enterprise ₹1,20,000/mo)</option>
+                                    <option value="RZP-CUST-303">RZP-CUST-303 (HyperScale Ventures - Has Active Coupon!)</option>
+                                    <option value="RZP-CUST-201">RZP-CUST-201 (FinTech Global - Mandate Failure)</option>
                                 </select>
                             </div>
 
                             <div class="form-group">
                                 <label>Proposed Action Tool Call</label>
                                 <select id="sim-action-name" class="form-control" onchange="updateSimParams()">
-                                    <option value="offer_discount">offer_discount(percentage, duration_months)</option>
-                                    <option value="extend_trial">extend_trial(days)</option>
+                                    <option value="apply_razorpay_coupon">apply_razorpay_coupon(discount_percentage, duration_months)</option>
+                                    <option value="razorpay_smart_retry">razorpay_smart_retry(gateway_priority)</option>
+                                    <option value="create_razorpay_payment_link">create_razorpay_payment_link(amount_inr, expires_in_hours)</option>
                                     <option value="pause_subscription">pause_subscription(duration_months)</option>
                                 </select>
                             </div>
 
                             <div id="sim-params-discount" class="param-group">
                                 <div class="form-group">
-                                    <label>Discount Percentage (Max Policy Limit: 20%)</label>
+                                    <label>Coupon Percentage (Max Policy Limit: 15%)</label>
                                     <input type="number" id="sim-param-pct" class="form-control" value="25" min="1" max="50">
                                     <small class="text-amber">Try 25% to trigger policy block!</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Duration (Months)</label>
-                                    <input type="number" id="sim-param-duration" class="form-control" value="6">
+                                    <input type="number" id="sim-param-duration" class="form-control" value="3">
                                 </div>
                             </div>
 
@@ -253,12 +254,12 @@
                 <div class="card glass">
                     <div class="card-header">
                         <h3>Idempotency & Restart Safety Test</h3>
-                        <p class="subtitle">Verifies that system restarts or duplicate batch runs cannot issue double discounts</p>
+                        <p class="subtitle">Verifies that system restarts or duplicate batch runs cannot issue double discounts/coupons</p>
                     </div>
                     <div class="idempotency-box">
                         <div class="idempotency-explanation">
                             <h4><i class="fa-solid fa-lock text-emerald"></i> Hard State Lock (`processed = 1`)</h4>
-                            <p>When the agent acts on an at-risk customer, the database immediately commits a <code>processed = 1</code> flag alongside a timestamped ledger entry. Subsequent agent triggers on the same account are intercepted mathematically before any API calls occur.</p>
+                            <p>When the Razorpay agent acts on an at-risk merchant, the database immediately commits a <code>processed = 1</code> flag alongside a timestamped ledger entry. Subsequent agent triggers on the same account are intercepted mathematically before any Razorpay API calls occur.</p>
                         </div>
                         
                         <div class="action-row">
@@ -280,7 +281,7 @@
     <div id="trace-modal" class="modal-overlay hidden">
         <div class="modal-box glass">
             <div class="modal-header">
-                <h3 id="modal-title">Customer Execution Trace</h3>
+                <h3 id="modal-title">Merchant Execution Trace</h3>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div class="modal-body" id="modal-content">

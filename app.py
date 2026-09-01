@@ -40,7 +40,7 @@ def get_metrics():
     blocked_count = sum(1 for l in logs if l["guardrail_status"] == "BLOCKED")
     remediated_count = sum(1 for l in logs if l["guardrail_status"] == "AUTO_REMEDIATED")
 
-    total_mrr_at_risk = sum(c["mrr"] for c in customers if c.get("risk_score", 0) >= predictor.RISK_TRIGGER_THRESHOLD)
+    total_gmv_at_risk_inr = sum(c["mrr"] for c in customers if c.get("risk_score", 0) >= predictor.RISK_TRIGGER_THRESHOLD)
 
     return jsonify({
         "success": True,
@@ -51,7 +51,8 @@ def get_metrics():
             "approved_count": approved_count,
             "blocked_count": blocked_count,
             "remediated_count": remediated_count,
-            "total_mrr_at_risk": round(total_mrr_at_risk, 2),
+            "total_mrr_at_risk": round(total_gmv_at_risk_inr, 2),
+            "currency": "INR",
             "policy_limits": {
                 "max_discount": MAX_DISCOUNT_PERCENTAGE,
                 "max_trial_days": MAX_TRIAL_EXTENSION_DAYS,
@@ -64,29 +65,29 @@ def get_metrics():
 def seed_data():
     database.seed_synthetic_data()
     predictor.run_predictive_pipeline()
-    return jsonify({"success": True, "message": "Database successfully re-seeded with synthetic customer personas."})
+    return jsonify({"success": True, "message": "Razorpay database re-seeded with merchant behavioral personas."})
 
 @app.route("/api/train-ml", methods=["POST"])
 def train_ml():
     customers = predictor.run_predictive_pipeline()
-    return jsonify({"success": True, "message": f"ML model retrained. {len(customers)} at-risk customers identified."})
+    return jsonify({"success": True, "message": f"Razorpay ML model retrained. {len(customers)} at-risk merchants identified."})
 
 @app.route("/api/process-all", methods=["POST"])
 def process_all():
     data = request.get_json(force=True, silent=True) or {}
     auto_remediate = data.get("auto_remediate", False)
     run_autonomous_pipeline(auto_remediate=auto_remediate)
-    return jsonify({"success": True, "message": "Autonomous retention pipeline executed."})
+    return jsonify({"success": True, "message": "Razorpay autonomous churn recovery pipeline executed."})
 
 @app.route("/api/process-customer/<customer_id>", methods=["POST"])
 def process_customer(customer_id):
     customer = database.get_customer_by_id(customer_id)
     if not customer:
-        return jsonify({"success": False, "message": "Customer not found"}), 404
+        return jsonify({"success": False, "message": "Merchant customer not found"}), 404
 
     data = request.get_json(force=True, silent=True) or {}
 
-    # Ensure customer risk score is computed
+    # Compute risk score
     p = predictor.ChurnPredictor()
     p.train()
     risk_score = p.predict_risk_score(customer)
@@ -115,30 +116,28 @@ def process_customer(customer_id):
 
 @app.route("/api/test-guardrail", methods=["POST"])
 def test_guardrail():
-    """Endpoint allowing interactive testing of arbitrary payloads against the guardrail interceptor."""
+    """Endpoint allowing interactive testing of arbitrary Razorpay payloads against the guardrail interceptor."""
     data = request.get_json(force=True, silent=True) or {}
-    customer_id = data.get("customer_id", "CUST-301")
-    action_name = data.get("action_name", "offer_discount")
-    params = data.get("parameters", {"percentage": 25, "duration_months": 3})
+    customer_id = data.get("customer_id", "RZP-CUST-301")
+    action_name = data.get("action_name", "apply_razorpay_coupon")
+    params = data.get("parameters", {"discount_percentage": 25, "duration_months": 3})
 
     customer = database.get_customer_by_id(customer_id) or {
-        "id": customer_id, "mrr": 500.0, "has_discount": 0, "processed": 0, "risk_score": 85.0
+        "id": customer_id, "mrr": 50000.0, "has_discount": 0, "processed": 0, "risk_score": 85.0
     }
 
-    # Temporarily set processed to 0 for simulation mode if needed
     if data.get("simulate_idempotency_reset", True):
         customer = dict(customer)
         customer["processed"] = 0
 
     llm_mock_output = {
-        "reasoning": f"[SIMULATED TEST] Testing proposed action '{action_name}' with parameters {params}.",
+        "reasoning": f"[SIMULATED TEST] Testing proposed Razorpay tool '{action_name}' with parameters {params}.",
         "tool_call": {
             "name": action_name,
             "parameters": params
         }
     }
 
-    # Dry-run evaluation without committing if dry_run flag is set
     interceptor_result = GuardrailInterceptor.evaluate_and_execute(
         customer=customer,
         llm_output=llm_mock_output,

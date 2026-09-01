@@ -1,24 +1,26 @@
 import database
-from mock_api import MockBillingAPI
+from mock_api import MockRazorpayAPI
 
 # --- HARDCODED COMPANY FINANCIAL & OPERATIONAL POLICIES ---
-MAX_DISCOUNT_PERCENTAGE = 15.0       # Strict company financial policy cap (15%)
+MAX_DISCOUNT_PERCENTAGE = 15.0       # Strict Razorpay retention coupon cap (15%)
 MAX_TRIAL_EXTENSION_DAYS = 14        # Max trial extension allowed
 MAX_PAUSE_DURATION_MONTHS = 3        # Max subscription pause allowed
 LTV_MAX_INTERVENTION_RATIO = 0.50   # Max cost allowed is 50% of 6-month LTV
 
 VALID_TOOL_NAMES = {
+    "razorpay_smart_retry",
+    "create_razorpay_payment_link",
+    "send_whatsapp_payment_reminder",
+    "apply_razorpay_coupon",
     "offer_discount",
     "extend_trial",
-    "pause_subscription",
-    "send_retention_email",
-    "schedule_customer_success_call"
+    "pause_subscription"
 }
 
 class GuardrailInterceptor:
     """
     Evaluates raw LLM proposed retention actions against deterministic company policies
-    BEFORE allowing interaction with billing APIs or databases.
+    BEFORE allowing interaction with Razorpay billing APIs or databases.
     """
     @staticmethod
     def evaluate_and_execute(customer, llm_output, auto_remediate_violators=False, simulate_api_error=False, simulate_rate_limit=False):
@@ -74,18 +76,18 @@ class GuardrailInterceptor:
 
         policy_violations = []
 
-        # --- GUARDRAIL CHECK 3: DISCOUNT PERCENTAGE CAP ---
-        if action_name == "offer_discount":
-            pct = params.get("percentage", 0)
+        # --- GUARDRAIL CHECK 3: COUPON / DISCOUNT PERCENTAGE CAP ---
+        if action_name in ["apply_razorpay_coupon", "offer_discount"]:
+            pct = params.get("discount_percentage", params.get("percentage", 0))
             if pct > MAX_DISCOUNT_PERCENTAGE:
                 policy_violations.append(
                     f"MAX_DISCOUNT_EXCEEDED: Proposed discount of {pct}% exceeds maximum authorized limit of {MAX_DISCOUNT_PERCENTAGE}%."
                 )
 
-            # --- GUARDRAIL CHECK 4: DOUBLE-DISCOUNT POLICY ---
+            # --- GUARDRAIL CHECK 4: DOUBLE-DISCOUNT / COUPON POLICY ---
             if customer.get("has_discount") == 1:
                 policy_violations.append(
-                    "DOUBLE_DISCOUNT_PROHIBITED: Customer already has an active discount on file. Discount stacking is strictly prohibited."
+                    "DOUBLE_DISCOUNT_PROHIBITED: Merchant already has an active coupon/discount on file. Stacking is strictly prohibited."
                 )
 
             # --- GUARDRAIL CHECK 5: FINANCIAL LTV BOUNDARY ---
@@ -97,7 +99,7 @@ class GuardrailInterceptor:
 
             if total_discount_cost > max_allowed_cost:
                 policy_violations.append(
-                    f"LTV_CAP_EXCEEDED: Total retention cost (${total_discount_cost:.2f}) exceeds 50% 6-month LTV cap (${max_allowed_cost:.2f})."
+                    f"LTV_CAP_EXCEEDED: Total retention cost (₹{total_discount_cost:.2f}) exceeds 50% 6-month LTV cap (₹{max_allowed_cost:.2f})."
                 )
 
         # --- GUARDRAIL CHECK 6: TRIAL EXTENSION LIMIT ---
@@ -118,12 +120,12 @@ class GuardrailInterceptor:
 
         # --- VERDICT EVALUATION ---
         if not policy_violations:
-            # Policy Passed -> Execute Action (handles simulated API errors gracefully)
+            # Policy Passed -> Execute Action
             exec_result = GuardrailInterceptor._dispatch_action(
                 customer_id, action_name, params, simulate_error=simulate_api_error, simulate_rate_limit=simulate_rate_limit
             )
 
-            # If gateway error or rate limit, log status without corrupting idempotency flag
+            # Handle simulated API errors cleanly
             if exec_result.get("status") in ["RATE_LIMITED", "GATEWAY_ERROR"]:
                 database.log_audit_entry(
                     customer_id=customer_id,
@@ -166,15 +168,17 @@ class GuardrailInterceptor:
             # Policy Violated -> Handle Block or Auto-Remediation
             violation_summary = " | ".join(policy_violations)
 
-            if auto_remediate_violators and action_name == "offer_discount" and customer.get("has_discount") == 0:
-                # Remediation: Cap discount percentage at policy max (15%)
+            if auto_remediate_violators and action_name in ["apply_razorpay_coupon", "offer_discount"] and customer.get("has_discount") == 0:
                 remediated_params = dict(params)
-                remediated_params["percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
+                if "discount_percentage" in remediated_params:
+                    remediated_params["discount_percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
+                if "percentage" in remediated_params:
+                    remediated_params["percentage"] = int(MAX_DISCOUNT_PERCENTAGE)
                 
                 exec_result = GuardrailInterceptor._dispatch_action(customer_id, action_name, remediated_params)
                 database.mark_customer_processed(customer_id, new_status="RETAINED_REMEDIATED")
                 
-                remediate_note = f"AUTO_REMEDIATED: Capped discount from {params.get('percentage')}% to {MAX_DISCOUNT_PERCENTAGE}%. Original violations: {violation_summary}"
+                remediate_note = f"AUTO_REMEDIATED: Capped coupon/discount to {MAX_DISCOUNT_PERCENTAGE}%. Original violations: {violation_summary}"
                 database.log_audit_entry(
                     customer_id=customer_id,
                     ml_risk_score=ml_risk_score,
@@ -214,19 +218,22 @@ class GuardrailInterceptor:
 
     @staticmethod
     def _dispatch_action(customer_id, action_name, params, simulate_error=False, simulate_rate_limit=False):
-        """Dispatches approved tool call to the Mock Billing API."""
-        if action_name == "offer_discount":
-            return MockBillingAPI.apply_discount(
-                customer_id, params.get("percentage", 10), params.get("duration_months", 3),
+        """Dispatches approved tool call to MockRazorpayAPI."""
+        if action_name == "razorpay_smart_retry":
+            return MockRazorpayAPI.razorpay_smart_retry(customer_id, params.get("gateway_priority", "OPTIMUS_HIGH"))
+        elif action_name == "create_razorpay_payment_link":
+            return MockRazorpayAPI.create_razorpay_payment_link(customer_id, params.get("amount_inr", 1000), params.get("expires_in_hours", 24))
+        elif action_name in ["apply_razorpay_coupon", "offer_discount"]:
+            pct = params.get("discount_percentage", params.get("percentage", 10))
+            return MockRazorpayAPI.apply_razorpay_coupon(
+                customer_id, pct, params.get("duration_months", 3),
                 simulate_error=simulate_error, simulate_rate_limit=simulate_rate_limit
             )
-        elif action_name == "extend_trial":
-            return MockBillingAPI.extend_trial(customer_id, params.get("days", 7))
+        elif action_name == "send_whatsapp_payment_reminder":
+            return MockRazorpayAPI.send_whatsapp_payment_reminder(customer_id, params.get("template_id", "PAYMENT_DUNNING_WHATSAPP"))
         elif action_name == "pause_subscription":
-            return MockBillingAPI.pause_subscription(customer_id, params.get("duration_months", 1))
-        elif action_name == "send_retention_email":
-            return MockBillingAPI.send_retention_email(customer_id, params.get("template_id", "GENERAL_DUNNING"), params.get("customized_note", ""))
-        elif action_name == "schedule_customer_success_call":
-            return MockBillingAPI.schedule_customer_success_call(customer_id, params.get("urgency", "MEDIUM"))
+            return MockRazorpayAPI.pause_subscription(customer_id, params.get("duration_months", 1))
+        elif action_name == "extend_trial":
+            return MockRazorpayAPI.extend_trial(customer_id, params.get("days", 7))
         else:
             return {"status": "ERROR", "error_code": "UNKNOWN_ACTION", "message": f"Unknown action '{action_name}'"}

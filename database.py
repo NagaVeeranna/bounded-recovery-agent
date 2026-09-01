@@ -18,21 +18,22 @@ def init_db():
     cursor.execute("DROP TABLE IF EXISTS audit_log")
     cursor.execute("DROP TABLE IF EXISTS customers")
 
-    # Customers table with behavioral metrics, LTV, and idempotency status
+    # Razorpay-Tailored Customers table with merchant & payment behavior metrics
     cursor.execute("""
     CREATE TABLE customers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT NOT NULL,
-        plan_type TEXT NOT NULL,
-        mrr REAL NOT NULL,
-        days_since_active INTEGER NOT NULL,
+        merchant_category TEXT NOT NULL, -- 'SaaS Subscriptions', 'E-Commerce', 'EdTech', 'D2C Brand'
+        mrr REAL NOT NULL, -- Monthly Recurring Revenue / GMV in INR (₹)
+        avg_transaction_value REAL NOT NULL, -- Average order/subscription value in INR (₹)
+        days_since_last_transaction INTEGER NOT NULL,
+        payment_failure_rate REAL NOT NULL, -- 0.0 to 1.0 (e.g. 0.35 = 35% failure)
         failed_payment_count INTEGER NOT NULL,
-        support_tickets_30d INTEGER NOT NULL,
-        usage_drop_pct REAL NOT NULL,
-        card_expiring_soon INTEGER NOT NULL, -- 1 if expiring in < 7 days, 0 otherwise
-        has_discount INTEGER DEFAULT 0, -- 1 if active discount exists
-        risk_score REAL DEFAULT 0.0, -- ML Risk Score (0-100%)
+        mandate_status TEXT DEFAULT 'ACTIVE', -- 'ACTIVE', 'EXPIRING_SOON', 'FAILED_RETRY'
+        card_expiring_soon INTEGER NOT NULL, -- 1 if card/mandate expiring in < 7 days
+        has_discount INTEGER DEFAULT 0, -- 1 if active promo/coupon exists
+        risk_score REAL DEFAULT 0.0, -- ML Churn Risk Score (0-100%)
         risk_status TEXT DEFAULT 'UNEVALUATED', -- 'HEALTHY', 'AT_RISK'
         processed INTEGER DEFAULT 0, -- Idempotency flag: 1 if already acted upon
         processed_at TEXT,
@@ -50,7 +51,7 @@ def init_db():
         raw_llm_reasoning TEXT,
         proposed_action TEXT,
         action_params TEXT,
-        guardrail_status TEXT NOT NULL, -- 'APPROVED', 'BLOCKED', 'AUTO_REMEDIATED'
+        guardrail_status TEXT NOT NULL, -- 'APPROVED', 'BLOCKED', 'AUTO_REMEDIATED', 'API_ERROR_RETRY'
         policy_violation_reason TEXT,
         final_executed_action TEXT,
         execution_details TEXT,
@@ -63,126 +64,133 @@ def init_db():
 
 def seed_synthetic_data():
     """
-    Populates database with realistic synthetic data covering 3 distinct customer personas:
-    1. Healthy Users (Low risk)
-    2. Card Expiration Users (High risk due to payment failure, active product usage)
-    3. Ghosting Users (High risk due to zero activity & heavy usage drop)
+    Populates database with realistic Razorpay payment & merchant behavioral data:
+    1. Healthy Subscriptions (Low churn risk)
+    2. Involuntary Churn (Payment Mandate Failures & Card Expirations - Razorpay Dunning Target)
+    3. Voluntary Churn (Merchant/User Inactivity & High Payment Drop-off)
     """
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
 
     synthetic_customers = [
-        # --- Persona 1: Healthy Users (Low churn risk) ---
+        # --- Persona 1: Healthy Merchant Subscriptions ---
         {
-            "id": "CUST-101",
-            "name": "Sarah Jenkins",
-            "email": "sarah.j@apexlogistics.io",
-            "plan_type": "Enterprise Pro",
-            "mrr": 499.00,
-            "days_since_active": 1,
+            "id": "RZP-CUST-101",
+            "name": "Apex Logistics India",
+            "email": "payments@apexlogistics.in",
+            "merchant_category": "SaaS Subscriptions",
+            "mrr": 49999.00,
+            "avg_transaction_value": 4999.00,
+            "days_since_last_transaction": 1,
+            "payment_failure_rate": 0.02,
             "failed_payment_count": 0,
-            "support_tickets_30d": 0,
-            "usage_drop_pct": 2.5,
+            "mandate_status": "ACTIVE",
             "card_expiring_soon": 0,
             "has_discount": 0
         },
         {
-            "id": "CUST-102",
-            "name": "David Chen",
-            "email": "dchen@nexuscloud.com",
-            "plan_type": "Growth Tier",
-            "mrr": 199.00,
-            "days_since_active": 2,
+            "id": "RZP-CUST-102",
+            "name": "Nexus Cloud Infra",
+            "email": "billing@nexuscloud.in",
+            "merchant_category": "SaaS Subscriptions",
+            "mrr": 19999.00,
+            "avg_transaction_value": 1999.00,
+            "days_since_last_transaction": 2,
+            "payment_failure_rate": 0.05,
             "failed_payment_count": 0,
-            "support_tickets_30d": 1,
-            "usage_drop_pct": 5.0,
+            "mandate_status": "ACTIVE",
             "card_expiring_soon": 0,
             "has_discount": 0
         },
-        # --- Persona 2: Card Expiration Users (At-risk payment failure) ---
+        # --- Persona 2: Involuntary Churn (Razorpay Smart Retry & Dunning Target) ---
         {
-            "id": "CUST-201",
-            "name": "Elena Rostova",
-            "email": "elena@fintechglobal.org",
-            "plan_type": "Enterprise Pro",
-            "mrr": 799.00,
-            "days_since_active": 1,
+            "id": "RZP-CUST-201",
+            "name": "FinTech Global Solutions",
+            "email": "finance@fintechglobal.in",
+            "merchant_category": "EdTech",
+            "mrr": 79999.00,
+            "avg_transaction_value": 7999.00,
+            "days_since_last_transaction": 1,
+            "payment_failure_rate": 0.45,
+            "failed_payment_count": 3,
+            "mandate_status": "FAILED_RETRY",
+            "card_expiring_soon": 1,
+            "has_discount": 0
+        },
+        {
+            "id": "RZP-CUST-202",
+            "name": "Vance Media House",
+            "email": "accounts@vancemedia.in",
+            "merchant_category": "D2C Brand",
+            "mrr": 29999.00,
+            "avg_transaction_value": 2999.00,
+            "days_since_last_transaction": 3,
+            "payment_failure_rate": 0.30,
             "failed_payment_count": 2,
-            "support_tickets_30d": 2,
-            "usage_drop_pct": 8.0,
+            "mandate_status": "EXPIRING_SOON",
             "card_expiring_soon": 1,
             "has_discount": 0
         },
+        # --- Persona 3: Voluntary Churn (Merchant Ghosting & Zero Transactions) ---
         {
-            "id": "CUST-202",
-            "name": "Marcus Vance",
-            "email": "marcus@vancemedia.co",
-            "plan_type": "Growth Tier",
-            "mrr": 299.00,
-            "days_since_active": 3,
+            "id": "RZP-CUST-301",
+            "name": "TechCorp India (Robert Sterling)",
+            "email": "rsterling@techcorp.in",
+            "merchant_category": "Enterprise SaaS",
+            "mrr": 120000.00,
+            "avg_transaction_value": 12000.00,
+            "days_since_last_transaction": 32,
+            "payment_failure_rate": 0.80,
             "failed_payment_count": 1,
-            "support_tickets_30d": 0,
-            "usage_drop_pct": 12.0,
-            "card_expiring_soon": 1,
-            "has_discount": 0
-        },
-        # --- Persona 3: Ghosting Users (Severe usage drop & high inactive days) ---
-        {
-            "id": "CUST-301",
-            "name": "TechCorp Solutions (Robert Sterling)",
-            "email": "rsterling@techcorpsolutions.com",
-            "plan_type": "Enterprise Tier",
-            "mrr": 1200.00,
-            "days_since_active": 28,
-            "failed_payment_count": 0,
-            "support_tickets_30d": 5,
-            "usage_drop_pct": 88.5,
+            "mandate_status": "CANCELLED",
             "card_expiring_soon": 0,
             "has_discount": 0
         },
         {
-            "id": "CUST-302",
-            "name": "Amanda Vance",
-            "email": "amanda@brightdesign.agency",
-            "plan_type": "Starter Tier",
-            "mrr": 99.00,
-            "days_since_active": 35,
-            "failed_payment_count": 1,
-            "support_tickets_30d": 3,
-            "usage_drop_pct": 92.0,
+            "id": "RZP-CUST-302",
+            "name": "Bright Design Studio",
+            "email": "amanda@brightdesign.in",
+            "merchant_category": "Agency",
+            "mrr": 9999.00,
+            "avg_transaction_value": 999.00,
+            "days_since_last_transaction": 45,
+            "payment_failure_rate": 0.75,
+            "failed_payment_count": 2,
+            "mandate_status": "FAILED_RETRY",
             "card_expiring_soon": 0,
             "has_discount": 0
         },
-        # --- Edge Case: At-risk User with existing discount (Testing Double-Discount Guard) ---
+        # --- Edge Case: At-risk Merchant with existing active coupon (Testing Double-Discount Guard) ---
         {
-            "id": "CUST-303",
-            "name": "HyperScale Ventures (Leo Miller)",
-            "email": "leo@hyperscale.io",
-            "plan_type": "Scale Tier",
-            "mrr": 650.00,
-            "days_since_active": 22,
+            "id": "RZP-CUST-303",
+            "name": "HyperScale Ventures",
+            "email": "leo@hyperscale.in",
+            "merchant_category": "Gaming & Digital",
+            "mrr": 65000.00,
+            "avg_transaction_value": 6500.00,
+            "days_since_last_transaction": 25,
+            "payment_failure_rate": 0.60,
             "failed_payment_count": 1,
-            "support_tickets_30d": 4,
-            "usage_drop_pct": 79.0,
+            "mandate_status": "ACTIVE",
             "card_expiring_soon": 0,
-            "has_discount": 1 # ALREADY HAS A DISCOUNT!
+            "has_discount": 1 # ALREADY HAS ACTIVE DISCOUNT/COUPON
         }
     ]
 
     for c in synthetic_customers:
         cursor.execute("""
-        INSERT INTO customers (id, name, email, plan_type, mrr, days_since_active, 
-                              failed_payment_count, support_tickets_30d, usage_drop_pct, 
-                              card_expiring_soon, has_discount)
-        VALUES (:id, :name, :email, :plan_type, :mrr, :days_since_active, 
-                :failed_payment_count, :support_tickets_30d, :usage_drop_pct, 
-                :card_expiring_soon, :has_discount)
+        INSERT INTO customers (id, name, email, merchant_category, mrr, avg_transaction_value,
+                              days_since_last_transaction, payment_failure_rate, failed_payment_count, 
+                              mandate_status, card_expiring_soon, has_discount)
+        VALUES (:id, :name, :email, :merchant_category, :mrr, :avg_transaction_value,
+                :days_since_last_transaction, :payment_failure_rate, :failed_payment_count, 
+                :mandate_status, :card_expiring_soon, :has_discount)
         """, c)
 
     conn.commit()
     conn.close()
-    print(f"Successfully initialized database with {len(synthetic_customers)} synthetic customers.")
+    print(f"Successfully initialized Razorpay database with {len(synthetic_customers)} synthetic merchants.")
 
 def update_customer_risk(customer_id, risk_score, risk_status):
     conn = get_db_connection()
@@ -250,7 +258,7 @@ def get_audit_logs():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    SELECT a.*, c.name as customer_name, c.email as customer_email, c.mrr, c.plan_type
+    SELECT a.*, c.name as customer_name, c.email as customer_email, c.mrr, c.merchant_category
     FROM audit_log a
     JOIN customers c ON a.customer_id = c.id
     ORDER BY a.id DESC

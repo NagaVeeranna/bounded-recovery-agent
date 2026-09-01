@@ -28,7 +28,7 @@ async function loadMetrics() {
             const m = data.metrics;
             document.getElementById("metric-total-customers").innerText = m.total_customers;
             document.getElementById("metric-at-risk-count").innerText = m.at_risk_count;
-            document.getElementById("metric-mrr-at-risk").innerText = `$${m.total_mrr_at_risk.toLocaleString()}`;
+            document.getElementById("metric-mrr-at-risk").innerText = `₹${m.total_mrr_at_risk.toLocaleString('en-IN')}`;
             document.getElementById("metric-approved-count").innerText = m.approved_count;
             document.getElementById("metric-blocked-count").innerText = m.blocked_count;
         }
@@ -61,9 +61,14 @@ async function loadCustomers() {
                     ? `<span class="badge badge-approved"><i class="fa-solid fa-lock"></i> Processed</span>` 
                     : `<span class="text-dim">Pending</span>`;
 
-                const cardExpiringBadge = c.card_expiring_soon == 1
-                    ? `<span class="text-rose font-weight-bold">YES (<7d)</span>`
-                    : `<span class="text-dim">NO</span>`;
+                let mandateBadge = `<span class="text-dim">${c.mandate_status}</span>`;
+                if (c.mandate_status === 'FAILED_RETRY') {
+                    mandateBadge = `<span class="badge badge-blocked">FAILED RETRY</span>`;
+                } else if (c.mandate_status === 'EXPIRING_SOON') {
+                    mandateBadge = `<span class="badge badge-remediated">EXPIRING SOON</span>`;
+                } else if (c.mandate_status === 'ACTIVE') {
+                    mandateBadge = `<span class="badge badge-approved">ACTIVE</span>`;
+                }
 
                 tr.innerHTML = `
                     <td>
@@ -71,15 +76,15 @@ async function loadCustomers() {
                         <small class="text-muted">${c.id} • ${c.email}</small>
                     </td>
                     <td>
-                        <strong>${c.plan_type}</strong><br>
-                        <span class="text-emerald">$${c.mrr}/mo</span>
+                        <strong>${c.merchant_category}</strong><br>
+                        <span class="text-emerald">₹${c.mrr.toLocaleString('en-IN')}/mo</span>
                     </td>
                     <td>
-                        <small>Inactive: <strong>${c.days_since_active}d</strong></small> | 
-                        <small>Failed Pay: <strong class="${c.failed_payment_count > 0 ? 'text-rose' : ''}">${c.failed_payment_count}</strong></small><br>
-                        <small>Usage Drop: <strong>${c.usage_drop_pct}%</strong></small>
+                        <small>Last Txn: <strong>${c.days_since_last_transaction}d ago</strong></small> | 
+                        <small>Fail Rate: <strong class="${c.payment_failure_rate > 0.3 ? 'text-rose' : ''}">${(c.payment_failure_rate * 100).toFixed(0)}%</strong></small><br>
+                        <small>Failed Mandates: <strong>${c.failed_payment_count}</strong></small>
                     </td>
-                    <td>${cardExpiringBadge}</td>
+                    <td>${mandateBadge}</td>
                     <td>
                         <div class="progress-bar-bg">
                             <div class="progress-bar-fill ${fillClass}" style="width: ${score}%"></div>
@@ -123,6 +128,8 @@ async function loadAuditLogs() {
                     verdictBadge = `<span class="badge badge-blocked">BLOCKED</span>`;
                 } else if (l.guardrail_status === 'AUTO_REMEDIATED') {
                     verdictBadge = `<span class="badge badge-remediated">REMEDIATED</span>`;
+                } else if (l.guardrail_status === 'API_ERROR_RETRY') {
+                    verdictBadge = `<span class="badge badge-remediated">API RETRY</span>`;
                 }
 
                 const ts = new Date(l.timestamp).toLocaleTimeString();
@@ -158,7 +165,7 @@ async function loadAuditLogs() {
 }
 
 async function seedDatabase() {
-    if (!confirm("Re-initialize SQLite database with fresh synthetic customer personas?")) return;
+    if (!confirm("Re-initialize SQLite database with fresh synthetic merchant personas?")) return;
     try {
         const res = await fetch("/api/seed", { 
             method: "POST",
@@ -180,7 +187,7 @@ async function runBatchPipeline() {
             body: JSON.stringify({})
         });
         const data = await res.json();
-        alert("Autonomous batch execution completed!");
+        alert("Razorpay autonomous batch execution completed!");
         loadDashboardData();
     } catch (err) {
         alert("Batch pipeline error: " + err);
@@ -214,7 +221,7 @@ async function triggerSingleCustomer(customerId) {
             loadDashboardData();
         }
     } catch (err) {
-        alert("Trigger customer error: " + err);
+        alert("Trigger merchant error: " + err);
     }
 }
 
@@ -223,7 +230,7 @@ function showTraceModal(customerId, data) {
     const title = document.getElementById("modal-title");
     const content = document.getElementById("modal-content");
 
-    title.innerText = `Trace Execution Log for ${customerId}`;
+    title.innerText = `Razorpay Execution Trace for ${customerId}`;
     
     const formattedJson = JSON.stringify(data, null, 2);
     content.innerHTML = `<pre style="color: #6366f1;">${formattedJson}</pre>`;
@@ -239,7 +246,7 @@ function updateSimParams() {
     document.getElementById("sim-params-discount").classList.add("hidden");
     document.getElementById("sim-params-trial").classList.add("hidden");
 
-    if (action === "offer_discount") {
+    if (action === "apply_razorpay_coupon" || action === "offer_discount") {
         document.getElementById("sim-params-discount").classList.remove("hidden");
     } else if (action === "extend_trial") {
         document.getElementById("sim-params-trial").classList.remove("hidden");
@@ -252,15 +259,17 @@ async function runGuardrailSimulation(e) {
     const actionName = document.getElementById("sim-action-name").value;
     
     let params = {};
-    if (actionName === "offer_discount") {
+    if (actionName === "apply_razorpay_coupon" || actionName === "offer_discount") {
         params = {
-            percentage: parseFloat(document.getElementById("sim-param-pct").value),
+            discount_percentage: parseFloat(document.getElementById("sim-param-pct").value),
             duration_months: parseInt(document.getElementById("sim-param-duration").value)
         };
-    } else if (actionName === "extend_trial") {
-        params = {
-            days: parseInt(document.getElementById("sim-param-days").value)
-        };
+    } else if (actionName === "razorpay_smart_retry") {
+        params = { gateway_priority: "OPTIMUS_HIGH" };
+    } else if (actionName === "create_razorpay_payment_link") {
+        params = { amount_inr: 5000, expires_in_hours: 24 };
+    } else if (actionName === "pause_subscription") {
+        params = { duration_months: 3 };
     }
 
     const payload = {
@@ -290,7 +299,7 @@ async function runGuardrailSimulation(e) {
 ${statusText}
 
 ----------------------------------------------------
-PROPOSED TOOL CALL:
+PROPOSED RAZORPAY TOOL CALL:
 Action: ${actionName}
 Params: ${JSON.stringify(params)}
 
@@ -321,7 +330,7 @@ async function testIdempotencyRun() {
         
         let logsText = "=== RECENT AUDIT LEDGER ENTRIES AFTER RE-TRIGGER ===\n\n";
         auditData.audit_logs.slice(0, 4).forEach(l => {
-            logsText += `[Log #${l.id}] Customer: ${l.customer_id} | Status: ${l.guardrail_status}\n`;
+            logsText += `[Log #${l.id}] Merchant: ${l.customer_id} | Status: ${l.guardrail_status}\n`;
             logsText += `  Reason: ${l.policy_violation_reason || l.execution_details}\n\n`;
         });
 

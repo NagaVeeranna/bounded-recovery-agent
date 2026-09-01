@@ -1,54 +1,85 @@
 import database
+import uuid
 
-class MockBillingAPI:
+class MockRazorpayAPI:
     """
-    Simulates external billing gateways (Stripe / Chargebee) and CRM system mutations,
-    including rate-limit handling, 500 error retries, and clean fallbacks.
+    Simulates Razorpay Payment Gateway & Subscriptions API endpoints:
+    - Smart Retry engine (Optimus)
+    - Instant Recovery Payment Links (Razorpay Links)
+    - Coupon Application (Razorpay Subscriptions)
+    - WhatsApp / SMS Payment Dunning Reminders
+    - Mandate Pausing & CSM Escalations
     """
     @staticmethod
-    def apply_discount(customer_id, percentage, duration_months, simulate_error=False, simulate_rate_limit=False):
-        # Handle simulated rate limit or 500 server error
+    def razorpay_smart_retry(customer_id, gateway_priority="OPTIMUS_HIGH"):
+        payment_id = f"pay_{uuid.uuid4().hex[:10]}"
+        return {
+            "status": "SUCCESS",
+            "action": "RAZORPAY_SMART_RETRY",
+            "razorpay_payment_id": payment_id,
+            "gateway_priority": gateway_priority,
+            "message": f"Triggered Razorpay Optimus Smart Retry for account {customer_id}. Payment ID: {payment_id}."
+        }
+
+    @staticmethod
+    def create_razorpay_payment_link(customer_id, amount_inr, expires_in_hours=24):
+        plink_id = f"plink_{uuid.uuid4().hex[:10]}"
+        short_url = f"https://rzp.io/i/{plink_id}"
+        return {
+            "status": "SUCCESS",
+            "action": "PAYMENT_LINK_CREATED",
+            "razorpay_payment_link_id": plink_id,
+            "payment_link_url": short_url,
+            "amount_inr": amount_inr,
+            "message": f"Generated Razorpay Instant Recovery Payment Link ({short_url}) for ₹{amount_inr}."
+        }
+
+    @staticmethod
+    def apply_razorpay_coupon(customer_id, discount_percentage, duration_months=3, simulate_error=False, simulate_rate_limit=False):
         if simulate_rate_limit:
             return {
                 "status": "RATE_LIMITED",
-                "error_code": "STRIPE_429_TOO_MANY_REQUESTS",
-                "message": "Stripe API rate limit encountered (HTTP 429). Action scheduled for automatic retry.",
+                "error_code": "RAZORPAY_429_TOO_MANY_REQUESTS",
+                "message": "Razorpay Subscriptions API rate limit encountered (HTTP 429). Action scheduled for automatic retry.",
                 "retry_recommended": True
             }
         
         if simulate_error:
             return {
                 "status": "GATEWAY_ERROR",
-                "error_code": "STRIPE_500_INTERNAL_ERROR",
-                "message": "Stripe Gateway 500 Error. Fallback: Logged issue and alerted engineering team.",
+                "error_code": "RAZORPAY_500_INTERNAL_ERROR",
+                "message": "Razorpay API Gateway 500 Error. Fallback: Alerted Razorpay engineering team.",
                 "retry_recommended": True
             }
 
         customer = database.get_customer_by_id(customer_id)
         if not customer:
-            return {"status": "ERROR", "error_code": "CUSTOMER_NOT_FOUND", "message": f"Customer {customer_id} not found."}
+            return {"status": "ERROR", "error_code": "CUSTOMER_NOT_FOUND", "message": f"Merchant {customer_id} not found."}
         
-        # Apply discount in database
+        # Apply coupon in database
         conn = database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE customers SET has_discount = 1 WHERE id = ?", (customer_id,))
         conn.commit()
         conn.close()
 
-        saved_arr = round(customer["mrr"] * 12 * (percentage / 100.0), 2)
+        saved_arr_inr = round(customer["mrr"] * 12 * (discount_percentage / 100.0), 2)
+        coupon_code = f"RZP_RETENTION_{int(discount_percentage)}"
         return {
             "status": "SUCCESS",
-            "action": "DISCOUNT_APPLIED",
-            "message": f"Applied {percentage}% discount for {duration_months} months to account {customer_id}.",
-            "saved_annual_revenue": saved_arr
+            "action": "RAZORPAY_COUPON_APPLIED",
+            "coupon_code": coupon_code,
+            "message": f"Applied Razorpay Coupon '{coupon_code}' ({discount_percentage}% off) to merchant {customer_id}.",
+            "saved_annual_revenue_inr": saved_arr_inr
         }
 
     @staticmethod
-    def extend_trial(customer_id, days):
+    def send_whatsapp_payment_reminder(customer_id, template_id="PAYMENT_DUNNING_WHATSAPP"):
         return {
             "status": "SUCCESS",
-            "action": "TRIAL_EXTENDED",
-            "message": f"Extended trial for customer {customer_id} by {days} days."
+            "action": "WHATSAPP_REMINDER_SENT",
+            "template_id": template_id,
+            "message": f"Dispatched Razorpay WhatsApp Payment Dunning Reminder ('{template_id}') to merchant {customer_id}."
         }
 
     @staticmethod
@@ -62,21 +93,13 @@ class MockBillingAPI:
         return {
             "status": "SUCCESS",
             "action": "SUBSCRIPTION_PAUSED",
-            "message": f"Paused subscription for customer {customer_id} for {duration_months} months."
+            "message": f"Paused subscription mandate for merchant {customer_id} for {duration_months} months."
         }
 
     @staticmethod
-    def send_retention_email(customer_id, template_id, customized_note):
+    def extend_trial(customer_id, days):
         return {
             "status": "SUCCESS",
-            "action": "EMAIL_DISPATCHED",
-            "message": f"Dispatched email '{template_id}' to customer {customer_id}. Note: '{customized_note}'"
-        }
-
-    @staticmethod
-    def schedule_customer_success_call(customer_id, urgency):
-        return {
-            "status": "SUCCESS",
-            "action": "CSM_CALL_SCHEDULED",
-            "message": f"Scheduled {urgency} urgency CSM retention call for account {customer_id}."
+            "action": "TRIAL_EXTENDED",
+            "message": f"Extended subscription trial for merchant {customer_id} by {days} days."
         }
