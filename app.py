@@ -50,13 +50,11 @@ def get_metrics():
 
     for l in logs:
         if l["guardrail_status"] in ["APPROVED", "AUTO_REMEDIATED"]:
-            # Lookup merchant MRR
             c = database.get_customer_by_id(l["customer_id"])
             if c:
                 monthly_mrr = c["mrr"]
-                revenue_recovered_inr += monthly_mrr * 12 # Preserved annual revenue
+                revenue_recovered_inr += monthly_mrr * 12
                 
-                # Check discount costs
                 try:
                     params = json.loads(l["action_params"]) if isinstance(l["action_params"], str) else l["action_params"]
                     if l["proposed_action"] in ["apply_retention_coupon", "offer_discount"]:
@@ -158,20 +156,31 @@ def process_customer(customer_id):
         "interceptor_result": interceptor_result
     })
 
-# --- PAYMENT WEBHOOK INTEGRATION ENDPOINT ---
+# --- WEBHOOK ENDPOINT WITH STRICT DEDUPLICATION & IDEMPOTENCY ---
 @app.route("/api/webhooks/payment-failed", methods=["POST"])
 def payment_failed_webhook():
     """
-    Simulates receiving a 'payment.failed' webhook event from gateway.
-    Automatically triggers the autonomous retention agent for the target merchant.
+    Simulates receiving a 'payment.failed' webhook event from payment gateway.
+    Enforces Webhook Idempotency: Ignores duplicate event IDs before running ML engine.
     """
     data = request.get_json(force=True, silent=True) or {}
     payload = data.get("payload", {})
     payment_entity = payload.get("payment", {}).get("entity", {})
 
     customer_id = payment_entity.get("customer_id", data.get("customer_id", "CUST-201"))
-    payment_id = payment_entity.get("id", "pay_mock_webhook_999")
+    payment_id = payment_entity.get("id", data.get("event_id", "pay_mock_webhook_999"))
     amount_inr = payment_entity.get("amount", 799900) / 100.0
+
+    # WEBHOOK IDEMPOTENCY CHECK
+    if database.is_webhook_processed(payment_id):
+        return jsonify({
+            "success": True,
+            "idempotent_duplicate": True,
+            "event": "payment.failed",
+            "payment_id": payment_id,
+            "merchant_id": customer_id,
+            "message": f"Webhook event '{payment_id}' was already ingested previously. Duplicate skipped safely."
+        }), 200
 
     customer = database.get_customer_by_id(customer_id)
     if not customer:
@@ -181,6 +190,9 @@ def payment_failed_webhook():
             "message": f"Webhook received for unknown merchant {customer_id}."
         }), 404
 
+    # Log webhook event to prevent duplicate re-ingestion
+    database.log_webhook_event(payment_id, "payment.failed", customer_id, status="PROCESSED")
+
     # Trigger recovery agent
     agent = RetentionAgent()
     llm_output = agent.generate_strategy(customer)
@@ -188,6 +200,7 @@ def payment_failed_webhook():
 
     return jsonify({
         "success": True,
+        "idempotent_duplicate": False,
         "event": "payment.failed",
         "payment_id": payment_id,
         "merchant_id": customer_id,

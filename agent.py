@@ -1,7 +1,8 @@
 import os
 import json
 import re
-from pydantic import BaseModel, Field, ValidationError
+import time
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from config import Config
 
 def sanitize_merchant_input(text):
@@ -19,10 +20,19 @@ def sanitize_merchant_input(text):
     # Truncate length
     return cleaned[:300].strip()
 
-# --- Pydantic Schema Validation for Schema Conformity ---
+# --- Pydantic Schema Validation for Schema Conformity & Adversarial Bound Protection ---
 class FintechToolCall(BaseModel):
     name: str = Field(..., description="Predefined retention tool name")
     parameters: dict = Field(default_factory=dict, description="Tool execution parameters")
+
+    @field_validator('parameters')
+    @classmethod
+    def validate_non_negative_parameters(cls, params: dict) -> dict:
+        """Adversarial Bound Protection: Blocks negative parameters (e.g. discount: -10)."""
+        for k, v in params.items():
+            if isinstance(v, (int, float)) and v < 0:
+                raise ValueError(f"Adversarial Bound Error: Parameter '{k}' cannot be negative ({v}).")
+        return params
 
 class ReasoningPayload(BaseModel):
     reasoning: str = Field(..., min_length=10, description="Step-by-step reasoning breakdown")
@@ -84,9 +94,8 @@ class RetentionAgent:
         """
         Determines optimal dunning tool call for an at-risk merchant.
         Uses Gemini API if key is set; otherwise uses intelligent fallback logic.
-        Validates output using Pydantic schema conformity.
+        Validates output using Pydantic schema conformity & Adversarial bounds.
         """
-        # Apply Prompt-Injection Defense Sanitizer on inputs
         clean_name = sanitize_merchant_input(customer.get("name", ""))
         clean_category = sanitize_merchant_input(customer.get("merchant_category", ""))
         
@@ -97,27 +106,27 @@ class RetentionAgent:
         raw_payload = None
         if self.api_key:
             try:
-                raw_payload = self._call_gemini_api(customer_sanitized)
+                raw_payload = self._call_gemini_api_with_backoff(customer_sanitized)
             except Exception as e:
-                print(f"[Agent Warning] Gemini API call failed ({e}). Using rule-augmented fallback.")
+                print(f"[Agent Warning] Gemini API call failed after retries ({e}). Reverting to rule fallback.")
                 raw_payload = self._fallback_reasoning_engine(customer_sanitized)
         else:
             raw_payload = self._fallback_reasoning_engine(customer_sanitized)
 
-        # Validate with Pydantic for schema conformity
+        # Validate with Pydantic for schema conformity & non-negative adversarial bounds
         return self._validate_and_format_payload(raw_payload, customer_sanitized)
 
     def _validate_and_format_payload(self, payload, customer):
-        """Pydantic Second-Pass Validator guaranteeing JSON schema conformity."""
+        """Pydantic Second-Pass Validator guaranteeing JSON schema conformity & non-negative bounds."""
         try:
             validated = ReasoningPayload(**payload)
             return validated.model_dump()
         except ValidationError as ve:
-            print(f"[Pydantic Schema Error] LLM output failed schema validation ({ve}). Reverting to safe fallback.")
+            print(f"[Pydantic Schema Error] LLM output failed schema/adversarial validation ({ve}). Reverting to safe fallback.")
             return self._fallback_reasoning_engine(customer)
 
-    def _call_gemini_api(self, customer):
-        """Calls Google Gemini API for structured JSON reasoning."""
+    def _call_gemini_api_with_backoff(self, customer, max_retries=3):
+        """Calls Google Gemini API with exponential backoff for HTTP 429 rate limits."""
         from google import genai
         client = genai.Client(api_key=self.api_key)
         
@@ -138,19 +147,26 @@ Merchant Profile:
 
 Select the best retention tool call JSON payload.
 """
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}"
-        )
-        
-        text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-        
-        return json.loads(text)
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+                )
+                text = response.text.strip()
+                if text.startswith("```json"):
+                    text = text[7:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+                return json.loads(text)
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    sleep_time = (2 ** attempt) + 1
+                    print(f"[API Rate Limit 429] Exponential backoff retry {attempt + 1}/{max_retries} in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                else:
+                    raise e
 
     def _fallback_reasoning_engine(self, customer):
         """
@@ -164,7 +180,6 @@ Select the best retention tool call JSON payload.
         card_expiring = customer["card_expiring_soon"]
         has_discount = customer["has_discount"]
 
-        # Case A: Involuntary Churn (Payment Failures & Mandate Issues)
         if mandate_status == "FAILED_RETRY" or failed_payments >= 3:
             reasoning = (
                 f"Merchant {c_id} has high risk score due to involuntary payment failure ({failed_payments} failed attempts, "
@@ -187,11 +202,8 @@ Select the best retention tool call JSON payload.
                     "vpa_handle": f"{c_id.lower()}@upi"
                 }
             }
-
-        # Case B: Voluntary Churn (Merchant Ghosting / Inactivity)
         elif days_inactive > 20 or failure_rate > 0.70:
             if has_discount == 1:
-                # Agent attempts coupon even when merchant already has active coupon (to test Interceptor blocking!)
                 reasoning = (
                     f"Merchant {c_id} is inactive ({days_inactive} days since transaction). "
                     f"Attempting to offer an additional 25% coupon code."
@@ -199,7 +211,7 @@ Select the best retention tool call JSON payload.
                 tool_call = {
                     "name": "apply_retention_coupon",
                     "parameters": {
-                        "discount_percentage": 25, # Intentional violation (>15% cap) & double discount for testing
+                        "discount_percentage": 25,
                         "duration_months": 3
                     }
                 }

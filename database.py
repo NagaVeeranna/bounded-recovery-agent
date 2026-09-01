@@ -6,44 +6,45 @@ import os
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fintech_agent.db")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
+def init_db(force_recreate=False):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Drop existing tables to ensure fresh schema
-    cursor.execute("DROP TABLE IF EXISTS audit_log")
-    cursor.execute("DROP TABLE IF EXISTS customers")
+    if force_recreate:
+        cursor.execute("DROP TABLE IF EXISTS audit_log")
+        cursor.execute("DROP TABLE IF EXISTS webhooks_log")
+        cursor.execute("DROP TABLE IF EXISTS customers")
 
     # Customers table with merchant & payment behavior metrics
     cursor.execute("""
-    CREATE TABLE customers (
+    CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT NOT NULL,
-        merchant_category TEXT NOT NULL, -- 'SaaS Subscriptions', 'E-Commerce', 'EdTech', 'D2C Brand'
-        mrr REAL NOT NULL, -- Monthly Recurring Revenue / GMV in INR (₹)
-        avg_transaction_value REAL NOT NULL, -- Average order/subscription value in INR (₹)
+        merchant_category TEXT NOT NULL,
+        mrr REAL NOT NULL,
+        avg_transaction_value REAL NOT NULL,
         days_since_last_transaction INTEGER NOT NULL,
-        payment_failure_rate REAL NOT NULL, -- 0.0 to 1.0 (e.g. 0.35 = 35% failure)
+        payment_failure_rate REAL NOT NULL,
         failed_payment_count INTEGER NOT NULL,
-        mandate_status TEXT DEFAULT 'ACTIVE', -- 'ACTIVE', 'EXPIRING_SOON', 'FAILED_RETRY'
-        card_expiring_soon INTEGER NOT NULL, -- 1 if card/mandate expiring in < 7 days
-        has_discount INTEGER DEFAULT 0, -- 1 if active promo/coupon exists
-        risk_score REAL DEFAULT 0.0, -- ML Churn Risk Score (0-100%)
-        risk_status TEXT DEFAULT 'UNEVALUATED', -- 'HEALTHY', 'AT_RISK'
-        processed INTEGER DEFAULT 0, -- Idempotency flag: 1 if already acted upon
+        mandate_status TEXT DEFAULT 'ACTIVE',
+        card_expiring_soon INTEGER NOT NULL,
+        has_discount INTEGER DEFAULT 0,
+        risk_score REAL DEFAULT 0.0,
+        risk_status TEXT DEFAULT 'UNEVALUATED',
+        processed INTEGER DEFAULT 0,
         processed_at TEXT,
-        status TEXT DEFAULT 'ACTIVE' -- 'ACTIVE', 'RETAINED', 'CHURNED', 'PAUSED'
+        status TEXT DEFAULT 'ACTIVE'
     )
     """)
 
-    # Audit_Log table: Append-only ledger of all predictive, reasoning, and interceptor decisions
+    # Permanent, Append-Only Audit Ledger (STRICTLY INSERT-ONLY)
     cursor.execute("""
-    CREATE TABLE audit_log (
+    CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id TEXT NOT NULL,
         timestamp TEXT NOT NULL,
@@ -51,7 +52,7 @@ def init_db():
         raw_llm_reasoning TEXT,
         proposed_action TEXT,
         action_params TEXT,
-        guardrail_status TEXT NOT NULL, -- 'APPROVED', 'BLOCKED', 'AUTO_REMEDIATED', 'API_ERROR_RETRY'
+        guardrail_status TEXT NOT NULL,
         policy_violation_reason TEXT,
         final_executed_action TEXT,
         execution_details TEXT,
@@ -59,22 +60,56 @@ def init_db():
     )
     """)
 
+    # Webhooks Dedup Table for Webhook Idempotency
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS webhooks_log (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        customer_id TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        status TEXT NOT NULL
+    )
+    """)
+
     conn.commit()
     conn.close()
 
-def seed_synthetic_data():
+def is_webhook_processed(event_id):
+    """Webhook Idempotency: Returns True if webhook event_id was already ingested."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM webhooks_log WHERE event_id = ?", (event_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
+
+def log_webhook_event(event_id, event_type, customer_id, status="INGESTED"):
+    """Logs ingested webhook event to prevent duplicate processing."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        cursor.execute("""
+        INSERT INTO webhooks_log (event_id, event_type, customer_id, received_at, status)
+        VALUES (?, ?, ?, ?, ?)
+        """, (event_id, event_type, customer_id, now_iso, status))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass # Already exists
+    conn.close()
+
+def seed_synthetic_data(force_recreate=True):
     """
     Populates database with realistic payment & merchant behavioral data:
     1. Healthy Subscriptions (Low churn risk)
     2. Involuntary Churn (Payment Mandate Failures & Card Expirations)
     3. Voluntary Churn (Merchant/User Inactivity & High Payment Drop-off)
     """
-    init_db()
+    init_db(force_recreate=force_recreate)
     conn = get_db_connection()
     cursor = conn.cursor()
 
     synthetic_customers = [
-        # --- Persona 1: Healthy Merchant Subscriptions ---
         {
             "id": "CUST-101",
             "name": "Apex Logistics India",
@@ -103,7 +138,6 @@ def seed_synthetic_data():
             "card_expiring_soon": 0,
             "has_discount": 0
         },
-        # --- Persona 2: Involuntary Churn (Smart Retry & Dunning Target) ---
         {
             "id": "CUST-201",
             "name": "FinTech Global Solutions",
@@ -132,7 +166,6 @@ def seed_synthetic_data():
             "card_expiring_soon": 1,
             "has_discount": 0
         },
-        # --- Persona 3: Voluntary Churn (Merchant Ghosting & Zero Transactions) ---
         {
             "id": "CUST-301",
             "name": "TechCorp India (Robert Sterling)",
@@ -161,7 +194,6 @@ def seed_synthetic_data():
             "card_expiring_soon": 0,
             "has_discount": 0
         },
-        # --- Edge Case: At-risk Merchant with existing active coupon (Testing Double-Discount Guard) ---
         {
             "id": "CUST-303",
             "name": "HyperScale Ventures",
@@ -174,13 +206,13 @@ def seed_synthetic_data():
             "failed_payment_count": 1,
             "mandate_status": "ACTIVE",
             "card_expiring_soon": 0,
-            "has_discount": 1 # ALREADY HAS ACTIVE DISCOUNT/COUPON
+            "has_discount": 1
         }
     ]
 
     for c in synthetic_customers:
         cursor.execute("""
-        INSERT INTO customers (id, name, email, merchant_category, mrr, avg_transaction_value,
+        INSERT OR REPLACE INTO customers (id, name, email, merchant_category, mrr, avg_transaction_value,
                               days_since_last_transaction, payment_failure_rate, failed_payment_count, 
                               mandate_status, card_expiring_soon, has_discount)
         VALUES (:id, :name, :email, :merchant_category, :mrr, :avg_transaction_value,
@@ -268,4 +300,4 @@ def get_audit_logs():
     return rows
 
 if __name__ == "__main__":
-    seed_synthetic_data()
+    seed_synthetic_data(force_recreate=True)
